@@ -1,0 +1,30 @@
+[book]
+title = "Rust 学习指南：从入门到进阶"
+authors = ["Rust 学习指南 contributors"]
+description = "面向中文读者的 Rust 系统教程：从变量、所有权到 trait、并发、async、宏与 unsafe。"
+language = "zh-CN"
+src = "src"
+
+[build]
+build-dir = "book"
+create-missing = false
+
+[output.html]
+default-theme = "rust"
+preferred-dark-theme = "navy"
+additional-css = ["theme/extra.css"]
+no-section-label = true
+smart-punctuation = false
+
+[output.html.playground]
+editable = true
+copy-js = true
+line-numbers = false
+
+[output.html.search]
+enable = true
+limit-results = 30
+heading-split-level = 2
+
+[output.html.code]
+hidelines = { rust = "##" }

@@ -1,0 +1,20 @@
+name: Check book
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: 章节结构、必备小节与交叉引用
+        run: python tools/check_book.py
+      - name: 普通 rust 代码块逐块类型检查
+        run: python tools/verify_blocks.py src
+      - name: 安装 mdBook 并构建（零警告）
+        run: |
+          cargo install mdbook --version 0.5.4 --locked
+          mdbook build

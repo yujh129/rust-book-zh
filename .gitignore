@@ -1,0 +1,21 @@
+# mdBook 构建产物
+book/
+
+# 本地临时目录（校验脚本、探针工程等）
+.scratch/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# 本地运行器的构建产物
+tools/playground/target/
+
+# 本地运行器每次运行都会覆盖这个入口文件，因此不入库（目录里保留了 src/.gitkeep）
+tools/playground/src/main.rs
+
+# 编辑器 / 系统
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,321 @@
+/* 中文排版微调：正文行高、字体、引用块与表格 */
+:root {
+  --content-max-width: 880px;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", "Source Han Sans SC", sans-serif;
+}
+
+.content main {
+  font-size: 1.62rem;
+  line-height: 1.9;
+}
+
+.content h1 {
+  font-size: 2.4rem;
+  padding-bottom: 0.4em;
+  border-bottom: 1px solid var(--table-border-color);
+}
+
+.content h2 {
+  font-size: 1.9rem;
+  margin-top: 2.2em;
+}
+
+.content h3 {
+  font-size: 1.6rem;
+  margin-top: 1.6em;
+}
+
+.content p,
+.content li {
+  text-align: justify;
+}
+
+blockquote {
+  border-inline-start: 4px solid var(--quote-border);
+  background: var(--quote-bg);
+  border-radius: 6px;
+  padding: 0.7em 1em;
+  margin: 1.2em 0;
+}
+
+blockquote p {
+  margin: 0.25em 0;
+}
+
+code {
+  font-family: "JetBrains Mono", "Cascadia Code", "Fira Code", Consolas,
+    "Courier New", monospace;
+  font-size: 0.92em;
+}
+
+.content table {
+  display: table;
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.2em 0;
+}
+
+.content table th,
+.content table td {
+  padding: 0.5em 0.8em;
+  border: 1px solid var(--table-border-color);
+}
+
+.content table th {
+  background: var(--table-header-bg);
+  font-weight: 600;
+}
+
+.content pre {
+  border-radius: 6px;
+}
+
+/* ── 章节导航：去掉左右两侧浮动的巨型箭头，改成正文末尾的小胶囊 ── */
+.nav-wide-wrapper, .nav-wrapper, .nav-chapters, .mobile-nav-chapters {
+  display: none !important;
+}
+
+.chapter-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 2.6rem 0 0.3rem;
+  padding-top: 1.1rem;
+  border-top: 1px solid var(--table-border-color);
+}
+
+.chapter-nav-link {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  max-width: 24rem;
+  min-width: 0;
+  padding: 0.25rem 0.7rem;
+  border: 1px solid var(--table-border-color);
+  border-radius: 999px;
+  background: var(--table-alternate-bg);
+  color: var(--fg);
+  font-size: 1.3rem;
+  line-height: 1.6;
+  text-decoration: none;
+}
+
+.chapter-nav-link:hover {
+  border-color: var(--links);
+  text-decoration: none;
+}
+
+.chapter-nav-direction {
+  flex: 0 0 auto;
+  color: var(--links);
+  font-size: 1.15rem;
+  white-space: nowrap;
+}
+
+.chapter-nav-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chapter-nav-toc {
+  flex: 0 0 auto;
+  padding: 0.25rem 0.7rem;
+}
+
+.chapter-nav-keys {
+  display: none;
+}
+
+@media (max-width: 700px) {
+  .chapter-nav-title { display: none; }
+  .chapter-nav-link { padding: 0.2rem 0.6rem; }
+}
+/* ── 精选配色：在右上角调色板菜单里选择（Auto/Light/Rust/Coal/Navy/Ayu 之后） ── */
+
+/* 纸墨：暖白纸质，长时间阅读不刺眼 */
+.sepia {
+  --bg: #faf6ee;
+  --fg: #3a342b;
+  --sidebar-bg: #f2ebdd;
+  --sidebar-fg: #4a4237;
+  --sidebar-non-existant: #b3a894;
+  --sidebar-active: #8a4b12;
+  --sidebar-spacer: #e6dcc8;
+  --scrollbar: #b3a894;
+  --icons: #8c7f6b;
+  --icons-hover: #3a342b;
+  --links: #8a4b12;
+  --inline-code-color: #7a3ea8;
+  --theme-popup-bg: #faf6ee;
+  --theme-popup-border: #d9cdb6;
+  --theme-hover: #f0e8d9;
+  --quote-bg: #f3ece0;
+  --quote-border: #e6dcc8;
+  --warning-border: #d98324;
+  --table-border-color: #e8e0d0;
+  --table-header-bg: #efe6d6;
+  --table-alternate-bg: #f5f0e6;
+  --searchbar-border-color: #c9bba1;
+  --searchbar-bg: #fffdf8;
+  --searchbar-fg: #3a342b;
+  --searchbar-shadow-color: #d9cdb6;
+  --searchresults-header-fg: #8c7f6b;
+  --searchresults-border-color: #d9cdb6;
+  --searchresults-li-bg: #f2ead9;
+  --search-mark-bg: #f2d99b;
+  --color-scheme: light;
+  --copy-button-filter: invert(52%) sepia(12%) saturate(600%) hue-rotate(2deg) brightness(95%) contrast(88%);
+  --copy-button-filter-hover: invert(32%) sepia(64%) saturate(1200%) hue-rotate(2deg) brightness(90%) contrast(95%);
+  --footnote-highlight: #d8a13a;
+  --overlay-bg: rgba(120, 110, 90, 0.35);
+  --blockquote-note-color: #1a6091;
+  --blockquote-tip-color: #3f7a1e;
+  --blockquote-important-color: #7a3ea8;
+  --blockquote-warning-color: #8a5a00;
+  --blockquote-caution-color: #b52731;
+  --sidebar-header-border-color: #b98a4b;
+}
+
+/* 樱花：浅粉底色，柔和偏冷 */
+.sakura {
+  --bg: #fff7f8;
+  --fg: #40333a;
+  --sidebar-bg: #fdeef1;
+  --sidebar-fg: #4b3a41;
+  --sidebar-non-existant: #c2a7b0;
+  --sidebar-active: #b02a5b;
+  --sidebar-spacer: #f6dfe5;
+  --scrollbar: #c2a7b0;
+  --icons: #a98a95;
+  --icons-hover: #40333a;
+  --links: #b02a5b;
+  --inline-code-color: #6a4aa0;
+  --theme-popup-bg: #fff7f8;
+  --theme-popup-border: #eccdd6;
+  --theme-hover: #fbe9ee;
+  --quote-bg: #fdeef1;
+  --quote-border: #f8dde5;
+  --warning-border: #e07a2f;
+  --table-border-color: #f7e3e8;
+  --table-header-bg: #fce4ea;
+  --table-alternate-bg: #fdf1f4;
+  --searchbar-border-color: #ddbcc6;
+  --searchbar-bg: #fffdfd;
+  --searchbar-fg: #40333a;
+  --searchbar-shadow-color: #eccdd6;
+  --searchresults-header-fg: #a98a95;
+  --searchresults-border-color: #eccdd6;
+  --searchresults-li-bg: #fdeef1;
+  --search-mark-bg: #f8c9dd;
+  --color-scheme: light;
+  --copy-button-filter: invert(62%) sepia(12%) saturate(600%) hue-rotate(280deg) brightness(94%) contrast(85%);
+  --copy-button-filter-hover: invert(28%) sepia(58%) saturate(2400%) hue-rotate(320deg) brightness(88%) contrast(96%);
+  --footnote-highlight: #e08fb4;
+  --overlay-bg: rgba(150, 120, 130, 0.35);
+  --blockquote-note-color: #1a6091;
+  --blockquote-tip-color: #3f7a1e;
+  --blockquote-important-color: #6a4aa0;
+  --blockquote-warning-color: #9a6700;
+  --blockquote-caution-color: #c62828;
+  --sidebar-header-border-color: #d4748f;
+}
+
+/* Nord：冷调深色，低饱和蓝灰 */
+.nord {
+  --bg: #2e3440;
+  --fg: #d8dee9;
+  --sidebar-bg: #292e39;
+  --sidebar-fg: #d8dee9;
+  --sidebar-non-existant: #4c566a;
+  --sidebar-active: #88c0d0;
+  --sidebar-spacer: #3b4252;
+  --scrollbar: #616e88;
+  --icons: #7b869c;
+  --icons-hover: #e5e9f0;
+  --links: #88c0d0;
+  --inline-code-color: #ebcb8b;
+  --theme-popup-bg: #2b303b;
+  --theme-popup-border: #4c566a;
+  --theme-hover: #3b4252;
+  --quote-bg: #343b49;
+  --quote-border: #3f4a5a;
+  --warning-border: #ebcb8b;
+  --table-border-color: #3b4252;
+  --table-header-bg: #434c5e;
+  --table-alternate-bg: #333a46;
+  --searchbar-border-color: #4c566a;
+  --searchbar-bg: #3b4252;
+  --searchbar-fg: #eceff4;
+  --searchbar-shadow-color: #4c566a;
+  --searchresults-header-fg: #97a1b4;
+  --searchresults-border-color: #4c566a;
+  --searchresults-li-bg: #343b49;
+  --search-mark-bg: #ebcb8b;
+  --color-scheme: dark;
+  --copy-button-filter: invert(58%) sepia(10%) saturate(500%) hue-rotate(180deg) brightness(92%) contrast(88%);
+  --copy-button-filter-hover: invert(78%) sepia(20%) saturate(700%) hue-rotate(150deg) brightness(100%) contrast(92%);
+  --footnote-highlight: #5e81ac;
+  --overlay-bg: rgba(46, 52, 64, 0.5);
+  --blockquote-note-color: #81a1c1;
+  --blockquote-tip-color: #a3be8c;
+  --blockquote-important-color: #b48ead;
+  --blockquote-warning-color: #ebcb8b;
+  --blockquote-caution-color: #bf616a;
+  --sidebar-header-border-color: #5e81ac;
+}
+
+/* Gruvbox：暖调深色，对比度更强的复古配色 */
+.gruvbox {
+  --bg: #282828;
+  --fg: #ebdbb2;
+  --sidebar-bg: #1d2021;
+  --sidebar-fg: #d5c4a1;
+  --sidebar-non-existant: #665c54;
+  --sidebar-active: #fabd2f;
+  --sidebar-spacer: #3c3836;
+  --scrollbar: #7c6f64;
+  --icons: #a89984;
+  --icons-hover: #ebdbb2;
+  --links: #83a598;
+  --inline-code-color: #fabd2f;
+  --theme-popup-bg: #32302f;
+  --theme-popup-border: #665c54;
+  --theme-hover: #3c3836;
+  --quote-bg: #32302f;
+  --quote-border: #504945;
+  --warning-border: #fabd2f;
+  --table-border-color: #3c3836;
+  --table-header-bg: #504945;
+  --table-alternate-bg: #32302f;
+  --searchbar-border-color: #665c54;
+  --searchbar-bg: #3c3836;
+  --searchbar-fg: #fbf1c7;
+  --searchbar-shadow-color: #665c54;
+  --searchresults-header-fg: #a89984;
+  --searchresults-border-color: #665c54;
+  --searchresults-li-bg: #32302f;
+  --search-mark-bg: #d79921;
+  --color-scheme: dark;
+  --copy-button-filter: invert(62%) sepia(12%) saturate(600%) hue-rotate(2deg) brightness(92%) contrast(85%);
+  --copy-button-filter-hover: invert(84%) sepia(42%) saturate(600%) hue-rotate(3deg) brightness(102%) contrast(96%);
+  --footnote-highlight: #d65d0e;
+  --overlay-bg: rgba(40, 40, 40, 0.5);
+  --blockquote-note-color: #83a598;
+  --blockquote-tip-color: #b8bb26;
+  --blockquote-important-color: #d3869b;
+  --blockquote-warning-color: #fabd2f;
+  --blockquote-caution-color: #fb4934;
+  --sidebar-header-border-color: #d79921;
+}
+
+/* 主题菜单变长后允许滚动，避免在小窗口里被裁掉 */
+.theme-popup {
+  max-height: 70vh;
+  overflow-y: auto;
+}
