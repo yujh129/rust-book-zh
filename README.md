@@ -4,7 +4,7 @@
 [![Pages 部署](https://github.com/yujh129/rust-book-zh/actions/workflows/pages.yml/badge.svg)](https://github.com/yujh129/rust-book-zh/actions/workflows/pages.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-一本写给中文读者的 Rust 系统教程：从第一行 `println!` 讲到 Tokio 异步、unsafe/FFI，最后带你做完六个完整项目。全书 **44 章 + 4 个附录**，约 **3.8 万行 / 106 万字符**，用 [mdBook](https://rust-lang.github.io/mdBook/) 构建。
+一本写给中文读者的 Rust 系统教程：从第一行 `println!` 讲到 Tokio 异步、unsafe/FFI，最后带你做完六个完整项目。全书 **44 章 + 4 个附录**，约 **3.8 万行 / 108 万字符**，用 [mdBook](https://rust-lang.github.io/mdBook/) 构建。
 
 书里的每个「典型错误案例」都是真实的 `rustc` 输出，而且可以在浏览器里直接改代码、点 **Run**，亲手对比错误写法与正确写法。
 
@@ -65,6 +65,7 @@ python tools/serve_book.py --no-serve   # 只启动运行器
 ├── STYLE.md             # 全书硬规范：章节结构、代码块标记、禁止事项
 ├── WRITING-RULES.md     # 写作协作规则（分块落盘、自检流程、交付格式）
 ├── CHAPTER-PLAN.md      # 每章规格：知识点、深入小节、五个错误码、综合作品
+├── CHANGELOG.md         # 版本变更记录：每一版做了什么、修了哪些问题
 ├── LICENSE
 ├── theme/               # extra.css（排版/导航/配色）、head.hbs（运行器转发）、index.hbs、book.js
 ├── src/                 # SUMMARY.md、前言与环境搭建、part1~part7、appendix A~D
@@ -73,10 +74,10 @@ python tools/serve_book.py --no-serve   # 只启动运行器
 │   ├── serve_book.py         # 一条命令同时启动书与本地运行器
 │   ├── playground_server.py  # 本地 Rust 运行器：离线编译并运行书里的代码块
 │   ├── playground/           # 运行器用的离线 cargo 小工程
-│   ├── verify_blocks.py      # 用 rustc 逐块类型检查普通 rust 示例
+│   ├── verify_blocks.py      # 用 rustc 逐块编译普通 rust 示例
 │   ├── verify_cases.py       # 把可编辑案例块送进运行器，核对正文里的报错
 │   ├── check_book.py         # 章节结构、必备小节与交叉引用检查
-│   ├── check_projects.py      # 逐个构建并测试 projects/ 下的六个工程
+│   ├── check_projects.py     # 逐个构建并测试 projects/ 下的六个工程
 │   └── ...                   # 其余为写作期辅助脚本
 └── .github/workflows/   # Pages 自动发布 + 代码块校验
 ```
@@ -94,7 +95,7 @@ python tools/serve_book.py --no-serve   # 只启动运行器
 | [`projects/43-chat-server/`](projects/43-chat-server) | 43 | tokio 多人聊天室：广播、昵称、慢客户端丢消息 | `cd projects/43-chat-server && cargo run -- 127.0.0.1:9000` |
 | [`projects/44-snake/`](projects/44-snake) | 44 | 终端贪吃蛇，方向序列从 stdin 读入，结果可复现 | `cd projects/44-snake && printf 'wwdd' | cargo run -- 8 6 3` |
 
-六个工程一共 41 个自动化测试，一条命令全跑（`--offline` 只在没有网络时用）：
+六个工程一共 42 个自动化测试，一条命令全跑（`--offline` 只在没有网络时用）：
 
 ```bash
 python tools/check_projects.py
@@ -137,6 +138,10 @@ python tools/verify_blocks.py src --only <章名>
 python tools/check_book.py
 python tools/check_projects.py --offline   # 改了 projects/ 里的代码才需要
 ```
+
+## 更新日志
+
+每个版本做了什么、修掉了哪些问题，都记在 [CHANGELOG.md](CHANGELOG.md) 里。
 
 ## 许可证
 
