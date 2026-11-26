@@ -388,9 +388,10 @@ struct MyBox<T> {
     ptr: *mut T,
 }
 
-// 只有在你确实知道它在语义上安全时才能这么做
+// SAFETY：假设此私有包装具有 Box 的独占所有权语义，转移时只有新线程拥有 T。
 unsafe impl<T: Send> Send for MyBox<T> {}
-unsafe impl<T: Send> Sync for MyBox<T> {}
+// SAFETY：共享包装只允许共享访问 T，不能通过 &MyBox<T> 写入 T。
+unsafe impl<T: Sync> Sync for MyBox<T> {}
 
 fn main() {
     let b = MyBox { ptr: std::ptr::null_mut::<i32>() };
@@ -398,7 +399,7 @@ fn main() {
 }
 ```
 
-`unsafe impl Send` 的承诺是："我保证这个类型的所有权转移和共享引用不会导致数据竞争"。如果这个承诺是错的，你得到的是 UB——编译器不会再帮你检查。标准库里的 `Arc`、`Mutex`、`AtomicXxx` 都是这样实现的。
+`Send` 承诺值可以转移到另一线程；`Sync` 承诺多个线程可以同时持有共享引用。`Cell<i32>` 是 `Send` 却不是 `Sync`，正好能区分上面两个约束。对外提供构造、解引用或析构方法时，必须维护注释中的所有权和别名条件。
 
 **实践建议**：除非你在写底层同步原语，否则不要手写 `unsafe impl Send/Sync`。
 

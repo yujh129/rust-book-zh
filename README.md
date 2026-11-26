@@ -83,7 +83,7 @@ python tools/serve_book.py --no-serve   # 只启动运行器
 
 ## 六个可以直接跑的项目
 
-第七部分不是纸上谈兵：每一章对应的完整工程都在 `projects/` 下，clone 下来就能 `cargo run` / `cargo test` —— 前四个零依赖，聊天室与贪吃蛇只依赖 tokio（书里也是这么讲的）。
+第七部分不是纸上谈兵：每一章对应的完整工程都在 `projects/` 下，clone 下来就能 `cargo run` / `cargo test` —— 除了聊天室用到 tokio，其余五个都只依赖标准库。
 
 | 目录 | 章节 | 是什么 | 跑起来 |
 | --- | --- | --- | --- |
@@ -109,9 +109,11 @@ python tools/check_projects.py --only 42    # 只跑一个
 | --- | --- | --- |
 | 章节结构、必备小节、交叉引用 | `python tools/check_book.py` | 50 个条目，0 告警 |
 | 普通 rust 代码块能否编译 | `python tools/verify_blocks.py src` | 436 块，0 失败 |
-| 可编辑案例的报错是否与正文一致 | `python tools/verify_cases.py` | 284 块：145 块逐字对上，139 块是可运行的修复版或测试，0 不一致 |
-| 六个项目工程能否构建并通过测试 | `python tools/check_projects.py --offline` | 6 个工程，41 个测试全过 |
+| 可编辑案例的报错是否与正文一致 | `python tools/verify_cases.py --local` | 313 块：174 块的编译报错逐字对上，129 块正常运行，10 块按预期在运行期失败，0 不一致 |
+| 六个项目工程能否构建并通过测试 | `python tools/check_projects.py --offline` | 6 个工程，42 个测试全过 |
 | 整书构建 | `mdbook build` | 零警告 |
+
+`verify_cases.py --local` 不需要启动运行器（CI 里就这么跑）；如果本机的运行器正在运行，它会提示先停掉——两个进程会争同一个 `tools/playground` 目录，拿到的输出会串。
 
 ## 这本书是怎么写出来的：DSH
 

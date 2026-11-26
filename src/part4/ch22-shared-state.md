@@ -347,9 +347,9 @@ fn main() {
 }
 ```
 
-`Release` 的 store 保证"42 的写入"不会被挪到"旗子置 true"之后；`Acquire` 的 load 保证"读 data"不会被挪到"检查旗子"之前。两者配对，`data` 的普通写就对读者可见了。这就是"release store 之前的一切，对 acquire load 之后的一切可见"。
+`Release` 的 store 保证"42 的写入"不会被挪到"旗子置 true"之后；`Acquire` 的 load 保证"读 data"不会被挪到"检查旗子"之前。当读方的 Acquire 加载读到这次 Release 存储写入的 `true` 时，发布前对 `data` 的写入才与读方同步。这就是"release store 之前的一切，对 acquire load 之后的一切可见"。
 
-如果把这两处都改成 `Relaxed`，程序依然能编译、依然原子，但读者可能先看到旗子为 true、再读到 0。x86 的硬件模型很强（load 自带 acquire、store 自带 release），这类 bug 在 x86 上常常跑一万次都不出现；换到 ARM 服务器上就偶发。**内存序错误不能靠测试发现**，只能靠推理。
+如果把这两处都改成 `Relaxed`，程序依然能编译、依然原子，但读者可能先看到旗子为 true、再读到 0。x86 的硬件模型很强（load 自带 acquire、store 自带 release），这类 bug 在 x86 上常常跑一万次都不出现；换到 ARM 服务器上就偶发。测试可能暴露错误；测试通过仍需用同步关系解释为什么所有允许的执行都正确。
 
 ### 代价差在哪
 
@@ -358,7 +358,7 @@ fn main() {
 - `Relaxed` 的 load/store 编译成普通 `mov`，和访问普通变量一样快。
 - `Acquire` 的 load 也是 `mov`，因为 x86 的 load 天然有序。
 - `Release` 的 store 还是 `mov`。
-- `SeqCst` 的 store 需要 `xchg`（隐含 lock 前缀），比 `mov` 贵一个数量级。
+- `SeqCst` 的 store 需要 `xchg`（隐含 lock 前缀），代价取决于目标和缓存竞争。
 
 所以"全都写 `SeqCst`"在很多程序里不会有明显性能问题，但会掩盖你对同步关系的理解。反之，"全用 `Relaxed` 图快"是在赌硬件和编译器不作妖。实用规则：
 
@@ -402,7 +402,7 @@ unlock():
 
 自旋不是免费的：空转的线程占着 CPU，如果线程数超过核心数，被自旋的锁持有者可能根本排不上 CPU，自旋纯属浪费。这就是"自旋锁只适合临界区极短、且线程数不超过核心数"的原因。
 
-平台差异：Linux 上 `std::sync::Mutex` 自 1.62 起直接基于 futex，不再包一层 `pthread_mutex_t`；Windows 用 SRWLock；macOS 用 `os_unfair_lock`。所以"Rust 的锁有多快"没有统一答案，但快路径都是一条原子指令。
+平台差异：Linux 上 `std::sync::Mutex` 自 1.62 起直接基于 futex，不再包一层 `pthread_mutex_t`；其他平台使用的等待原语取决于目标和标准库版本。所以"Rust 的锁有多快"没有统一答案，但快路径都是一条原子指令。
 
 顺带说 `parking_lot`：不实现 poisoning（很多人认为 poison 弊大于利），守卫更小，通常比 std 快，还提供 `try_lock_for` 这类超时接口。代价是多一个依赖，标准库够用时不必换。
 
@@ -785,7 +785,7 @@ fn main() {
 - poisoning 是运行期机制：持锁 panic 会让后续 `lock` 返回 `Err`。`into_inner` 可取回数据，但要不要取回是业务决定。
 - `RwLock` 允许多读或单写，适合读远多于写的场景；写者可能饥饿，临界区长短决定它是否划算。
 - 原子类型只保证单个操作的原子性，`Ordering` 管的是操作之间的可见性与重排，不是"原子/不原子"。
-- `Relaxed` 适合纯计数；`Release`/`Acquire` 配对用于"发布数据 + 读方确认"；`SeqCst` 最贵也最不容易写错。
+- `Relaxed` 适合纯计数；`Release`/`Acquire` 配对用于"发布数据 + 读方确认"；`SeqCst` 额外约束所有顺序一致操作的全局顺序，具体性能代价要测量。
 - 锁粒度是性能与正确性的折中：临界区越小越好，但拆得太细会让不变量失去保护。先测量，再拆。
 - 死锁的四种常见成因：同一线程重复加锁、多锁顺序不一致、持锁调用外部代码、守卫生命周期过长（含跨 `.await`）。
 - futex 的启示：无争用走一条 CAS，争用才进内核睡眠，睡前先自旋；这也是"锁本身不慢，争用才慢"的底层原因。

@@ -9,12 +9,12 @@
 
 ## 1.1 为什么第一件事是 Cargo
 
-几乎每种语言都有一句"Hello, world"，但用什么方式写这句问候，决定了你后面怎么组织代码。直接调 `rustc main.rs` 只能编译单文件程序，一旦要引第三方库、拆分模块、跑测试，就得手工管理一堆编译参数。
+几乎每种语言都有一句"Hello, world"，但用什么方式写这句问候，决定了你后面怎么组织代码。直接调 `rustc main.rs` 可以编译一个 crate（也能加载其他模块文件），一旦要引第三方库、拆分模块、跑测试，就得手工管理一堆编译参数。
 
 Cargo 把这些事情收进一个配置文件 `Cargo.toml`，剩下的交给命令。它不只是"包管理器"，而是 Rust 的**构建系统 + 依赖管理器 + 测试运行器 + 发布工具**。官方也把它当作事实标准，所以从第一个程序开始就用它。
 
 ```console
-$ cargo new hello --bin
+$ cargo new hello --bin --edition 2021
      Created binary (application) `hello` package
 $ cd hello
 $ tree .
@@ -46,9 +46,9 @@ edition = "2021"
 
 | 字段 | 含义 | 注意 |
 | --- | --- | --- |
-| `name` | crate 名，也是生成的二进制名 | 只能用小写字母、数字、`_`、`-`；发布到 crates.io 后不可改 |
-| `version` | 语义化版本 | 发布新版本必须递增，否则 crates.io 拒绝 |
-| `edition` | 语言版本，不是编译器版本 | 2021 是主流；2024 见下文 |
+| `name` | crate 名，也是生成的二进制名 | crates.io 接受 ASCII 字母、数字、`_`、`-`，常用小写；库代码中以 `_` 代替 `-` |
+| `version` | 语义化版本 | 每次发布必须使用该包尚未用过的版本号 |
+| `edition` | 语言版本，不是编译器版本 | 本书选 2021；当前 Cargo 新建项目默认选 2024 |
 | `rust-version` | 支持的最低 Rust 版本（MSRV） | 写库时建议填，例如 `rust-version = "1.75"` |
 | `authors` | 作者列表 | 仅展示用，crates.io 已不强制 |
 | `license` | SPDX 许可证标识 | 发布 crates.io 必填，例如 `"MIT OR Apache-2.0"` |
@@ -67,7 +67,7 @@ tokio = { git = "https://github.com/tokio-rs/tokio" } # git 依赖
 criterion = "0.5"                             # 只在测试/示例中可用
 ```
 
-> **edition 是什么**：同一个编译器可以按不同版本的语法规则解析代码。2021 版把闭包捕获改成按字段捕获、允许 `array.into_iter()` 按值迭代、支持 `{name}` 内联格式参数；2024 版把 `gen` 变成关键字、要求 `unsafe extern`。切换 edition 只改这一行，依赖和工具链不用动。
+> **edition 是什么**：同一个编译器可以按不同版本的语法规则解析代码。2021 版把闭包捕获改成按字段捕获、允许 `array.into_iter()` 按值迭代；2024 版把 `gen` 变成关键字、要求 `unsafe extern`。同一依赖图可以混用 edition。迁移已有代码要检查不兼容之处，2024 需要 Rust 1.85 或更高版本。`{name}` 内联格式参数从 Rust 1.58 起在各 edition 均可使用。
 
 ## 1.2 第一行 Rust 代码
 
@@ -112,7 +112,7 @@ cargo run
 
 几个值得知道的点：
 
-- **增量单位是 crate，不是函数**。改一行代码，重新编译的是整个 crate（但依赖不用重编）。这就是为什么 Rust 项目习惯拆成多个小 crate：编译可以并行，改动只影响局部。
+- **Cargo 按目标决定是否调用 rustc**。改动库后，依赖它的目标也可能重编；启用增量编译时，rustc 能复用一个 crate 内部未变的查询与代码生成结果。这就是为什么 Rust 项目习惯拆成多个小 crate：编译可以并行，改动只影响局部。
 - `target/debug/deps/` 里是编译产物与依赖，`target/debug/incremental/` 是增量缓存，`target/debug/.fingerprint/` 记录"什么输入产生了什么输出"。`cargo clean` 删的就是整个 `target/`。
 - **借用检查发生在 MIR 上**（`mir borrowck`），比类型检查晚，所以有些报错会先出现类型错误、修完才暴露借用错误。
 
@@ -468,8 +468,8 @@ error[E0428]: the name `main` is defined multiple times
 ## 小结
 
 - `cargo new` 生成的项目由 `Cargo.toml`（元数据与依赖）和 `src/main.rs`（入口）组成。
-- 一次编译的单位是 crate；`target/debug/.fingerprint` 记录增量依据，改动一行只会重编当前 crate。
+- 一次编译的单位是 crate；`target/debug/.fingerprint` 记录增量依据，改动库也可能触发下游目标重编。
 - `println!` 是宏，格式串在编译期检查；`{}` 走 Display，`{:?}` 走 Debug，`dbg!` 打印带位置信息到 stderr。
-- `cargo check` 只做类型检查，开发时比 `build` 快；交付用 `--release`，注意 release 下溢出不再 panic。
+- `cargo check` 只做类型检查，开发时比 `build` 快；交付用 `--release`，普通整数加法的溢出检查由 profile 配置决定。
 - `let` 默认不可变，需要修改时写 `let mut`，这是编译器能验证的承诺。
 - `main` 可以返回 `Result` 或 `ExitCode`；`process::exit` 不执行析构。

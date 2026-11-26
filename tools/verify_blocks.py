@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Extract every rust fenced block from the book and type-check it with rustc.
+"""Extract every rust fenced block from the book and compile it with rustc.
 
 Blocks whose info string is exactly 'rust' must be self-contained programs
 (mdBook playground style). Hidden lines (mdBook hidelines, prefix '##') are
 unhidden before compiling. Third-party/noplayground blocks are skipped.
 """
-import argparse, subprocess, sys, tempfile
+import argparse, subprocess, sys
 from pathlib import Path
 import re
 
@@ -42,10 +42,10 @@ def main():
 
     failures = []
     for tag, path, lineno, rs in tasks:
-        out = work / (tag + '.rmeta')
+        out = work / (tag + '.o')
         proc = subprocess.run(
             ['rustc', '--edition', '2021', '--crate-type', 'bin',
-             '--emit=metadata', '-A', 'warnings', '-o', str(out), str(rs)],
+             '--emit=obj', '-A', 'warnings', '-o', str(out), str(rs)],
             capture_output=True, text=True, encoding='utf-8', errors='replace')
         if proc.returncode != 0:
             head = [l for l in proc.stderr.splitlines() if l.startswith('error')][:3]

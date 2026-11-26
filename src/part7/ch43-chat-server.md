@@ -312,7 +312,7 @@ pub fn timestamp() -> String {
 发消息的三处地方一律用 try_send，不 await，这是本章最重要的一个取舍：
 
 - hub 一旦 await 某个满队列，后面所有人的消息都会排队，一个慢客户端就能拖住整个房间。我们前面费劲把写拆成 task，就是为了不在 hub 里等待。
-- 队列满只说明接收端暂时跟不上。聊天室的取舍是丢最新的：过时的消息比新消息更没用，而卡住所有人代价更大。
+- 队列满时 `try_send` 拒绝新消息，已排队的消息保持原顺序。牺牲该客户端的一次投递，其他客户端仍能继续收消息。
 - dropped 计数器至少让运维知道有人在丢消息。但它区分不了「暂时慢」和「已经死了」。真实项目通常再加一条规则：连续丢 N 条就判定连接已死，给 hub 发一条 Leave 把它踢出去。本章保留计数，踢人留作练习。
 
 还有一处必须说实话：try_send 的 Err 其实有两种，Full 表示队列满，Closed 表示写 task 已经退出、对端关闭。上面的代码把它们合并计数了。严格说 Closed 应该立刻把客户端从表里删掉，否则死连接会一直留在在线名单里，每次广播都白试一次——这就是 43.9 要讲的连接泄漏。先把主线跑通，练习里再修。
@@ -323,15 +323,16 @@ pub fn timestamp() -> String {
 
 第一，TcpStream 只实现了 AsyncRead 和 AsyncWrite，没有实现 AsyncBufRead，所以它本身没有 read_line 可用。必须先用 BufReader 包一层：BufReader 持有缓冲区，半行数据有地方暂存，read_line 才能在一次 read 拿回多行时只消费一行。忘记包 BufReader 的报错通常不是「方法不存在」，而是类型不满足 AsyncBufRead 的约束。
 
-第二，lines() 是 AsyncBufReadExt 提供的便捷方法，返回一个 Lines，next_line 给出 `Option<String>`：读完了是 None，IO 错误是 Err。它内部同样是 read_line，只是替你管理了 String。注意这个 trait 必须在作用域里，否则编译器只会告诉你「没有名为 lines 的方法」，而不是「忘了导入」——这正是案例 3。
+第二，lines() 是 AsyncBufReadExt 提供的便捷方法，返回一个 Lines，`next_line().await` 给出 `io::Result<Option<String>>`：读完了是 None，IO 错误是 Err。`Lines` 会保存读到一半的数据，`next_line` 可安全地用于可能取消的等待。注意这个 trait 必须在作用域里，否则编译器只会告诉你「没有名为 lines 的方法」，而不是「忘了导入」——这正是案例 3。
 
-写出侧对应的是 BufWriter。一条消息至少两个 write：正文和换行。裸 TcpStream 上每次 write_all 都是一次系统调用；BufWriter 把小块攒进缓冲区，flush 决定什么时候真正推给内核。忘记 flush 的典型表现是本地测试碰巧能过、换台机器就「消息卡住」——数据还停在用户态缓冲里。
+写出侧对应的是 BufWriter。一条消息至少两个 write：正文和换行。直接对 TcpStream 调用 `write_all` 时，一次逻辑写入可能需要多次底层写操作；BufWriter 把小块攒进缓冲区，flush 决定什么时候真正推给内核。忘记 flush 的典型表现是本地测试碰巧能过、换台机器就「消息卡住」——数据还停在用户态缓冲里。
 
 写 task 只有十几行：
 
 ```rust,noplayground
 let (out_tx, mut out_rx) = mpsc::channel::<String>(OUT_CAPACITY);
-let write_task = tokio::spawn(async move {
+let mut writers = tokio::task::JoinSet::new();
+writers.spawn(async move {
     while let Some(line) = out_rx.recv().await {
         if writer.write_all(line.as_bytes()).await.is_err() {
             break;
@@ -370,9 +371,9 @@ pub async fn run(listener: TcpListener, mut shutdown: watch::Receiver<bool>) -> 
     let mut conns = tokio::task::JoinSet::new();
     let mut next_id: u64 = 0;
 
-    loop {
+    let result = loop {
         tokio::select! {
-            _ = shutdown.changed() => break,
+            _ = shutdown.changed() => break Ok(()),
             accepted = listener.accept() => {
                 match accepted {
                     Ok((stream, _peer)) => {
@@ -380,17 +381,17 @@ pub async fn run(listener: TcpListener, mut shutdown: watch::Receiver<bool>) -> 
                         next_id += 1;
                         conns.spawn(handle_conn(id, stream, cmd_tx.clone(), shutdown.clone()));
                     }
-                    Err(_) => break,
+                    Err(err) => break Err(err),
                 }
             }
             Some(_) = conns.join_next() => {}
         }
-    }
+    };
 
     drop(cmd_tx);
-    let _ = hub.await;
     conns.shutdown().await;
-    Ok(())
+    let _ = hub.await;
+    result
 }
 ```
 
@@ -398,8 +399,8 @@ pub async fn run(listener: TcpListener, mut shutdown: watch::Receiver<bool>) -> 
 
 - 第三个分支是任务回收。JoinSet 会把已完成的任务留着等你取，不取就一直占内存；join_next 在集合为空时返回 None，模式不匹配，这个分支自动禁用，不会空转。
 - drop(cmd_tx) 扔掉的是 accept 循环手里这一份。hub 能退出并不依赖频道关闭——它自己的 select 里也等同一个关闭信号。
-- 退出链条的顺序不能反：hub 先退出，退出时把表里的 Client 全部丢掉，每个出站队列的发送端随之消失，写 task 的 recv 返回 None 自行结束；连接任务里那句 write_task.await 才不会永远挂着。如果先等连接任务、再关 hub，一个正在等出站队列的写 task 就永远等不到 None。
-- conns.shutdown().await 兜底：任何还没退出的连接任务在这一步被取消。正常情况下它们已经被信号叫停了，这一步只是保证不漏。
+- 每个连接用自己的 `JoinSet` 持有写任务。正常离开时等待写任务；若服务器取消连接任务，内部集合被析构，也会取消写任务。仅丢弃一个普通 `JoinHandle` 会让写任务继续独立运行。
+- 停止接收后，`conns.shutdown().await` 取消并回收剩余连接任务，再等待 hub。监听出错时，这个顺序也能释放连接持有的发送端，使 hub 退出。关闭服务时不承诺把每个客户端队列里的消息发完。
 
 hub 循环本身很短：
 
@@ -454,14 +455,14 @@ loop {
 }
 ```
 
-这里藏着一个 tokio 里最常见的正确性陷阱：read_line 不是可取消安全的。select! 里另一个分支先完成时，read_line 的 future 会被丢掉；已经读进 BufReader 缓冲区的那部分数据还在，但已经追加进 line 的那部分会跟着 line 一起丢失。上面的写法之所以安全，是因为 line 每轮新建，而且取消只在「要退出了」时发生。如果同一个 select 里还有别的会先完成的分支，就必须换成手写状态机，或者把半行数据留在自己的缓冲区里。
+这里藏着一个 tokio 里最常见的正确性陷阱：read_line 不是可取消安全的。select! 里另一个分支先完成时，read_line 的 future 会被丢掉；已经读进 BufReader 缓冲区的那部分数据还在，但已经追加进 line 的那部分会跟着 line 一起丢失。上面的写法之所以安全，是因为 line 每轮新建，而且取消只在「要退出了」时发生，后续不再使用这条连接的剩余输入。如果其他分支胜出后还要接着读，可以保留一个 `lines()` 读取器，改用可取消安全的 `next_line()`，或显式保存未处理的字节。
 
 把 43.2 的骨架、43.5 的写 task 和这段读循环按顺序接起来，就是完整的 handle_conn。还差最后三步：跳出循环后给 hub 发 Leave，再等写 task 收尾（hub 退出时会把 Client 连同出站队列的发送端一起丢掉，写 task 的 recv 这才返回 None）。
 
 ```rust,noplayground
 // 三条退出路径（/quit、EOF、关闭信号）共用同一个出口。
 let _ = cmd_tx.send(Cmd::Leave { id }).await;
-let _ = write_task.await;
+let _ = writers.join_next().await;
 ```
 
 注意上面「未知命令」走的是 Cmd::Notice 而不是 Cmd::Say：这类提示只该回给发送者，广播给整个房间会让所有人都看到别人敲错的命令。hub 的 Notice 分支只调 send_to，不碰 broadcast。
@@ -749,7 +750,7 @@ Send 意味着 future 内部跨 await 持有的每个值都必须是 Send，因�
 1. 忘记发 Leave。表里留着已经断开的连接，在线名单是错的，每次广播都往一个没人读的队列里试一次，内存也不释放。本项目的 handle_conn 在跳出读循环之后一定会发 Leave，不管是 /quit、EOF 还是收到关闭信号，三条路径共用同一个出口。
 2. 发了 Leave 但 hub 没 remove。Client 还在表里，它的 tx 就一直活着，写 task 永远阻塞在 recv 上。所以 Leave 的处理必须是 remove，而不是只发一条通知。
 3. 只 spawn 不回收。task 结束后 JoinHandle 和它的输出还留在 JoinSet 里，连接多了就是稳定的内存增长。accept 循环里那个 join_next 分支干的就是这件事。
-4. panic 被吞掉。spawn 出去的 task panic 不会让父任务失败，只有 await JoinHandle 才能看到 Err。conns.shutdown().await 的返回值被我们忽略了，生产代码至少应该记一条日志。
+4. panic 被吞掉。spawn 出去的 task panic 不会让父任务失败，只有 await JoinHandle 才能看到 Err。`JoinSet::shutdown` 会忽略任务的 panic，生产代码至少应该记一条日志。
 
 Drop 在这里扮演了收尾的角色：Client 被 remove 时 tx 被 drop，写 task 的 out_rx.recv 立刻返回 None，写 task 退出，write_half 被 drop，内核发出 FIN。一个 remove 动作同时完成了三件事。反过来说，任何地方多 clone 一份 tx 存着，写 task 就会多活一轮，泄漏就是这么来的。
 
@@ -763,7 +764,7 @@ Drop 在这里扮演了收尾的角色：Client 被 remove 时 tx 被 drop，写
 
 想用 broadcast 做广播，接收端照着 mpsc 的习惯写：
 
-```rust,noplayground
+```rust,editable
 use tokio::sync::broadcast;
 
 #[tokio::main]
@@ -825,7 +826,7 @@ async fn main() {
 
 ### 案例 2：广播时把 String 移动进了循环——E0382
 
-```rust,noplayground
+```rust,editable
 use tokio::sync::mpsc;
 
 struct Client {
@@ -891,7 +892,7 @@ Arc::clone 只加一次原子计数，消息内容全程只有一份。本章的
 
 ### 案例 3：lines() 找不到方法——E0599
 
-```rust,noplayground
+```rust,editable
 use tokio::io::BufReader;
 use tokio::net::TcpStream;
 
@@ -912,7 +913,7 @@ error[E0599]: no method named `lines` found for struct `tokio::io::BufReader<R>`
   7 |     let mut lines = BufReader::new(stream).lines();
     |                                            ^^^^^ method not found in `tokio::io::BufReader<tokio::net::TcpStream>`
     |
-   ::: C:\Users\yujinhao\.cargo\registry\src\rsproxy.cn-e3de039b2554c837\tokio-1.54.1\src\io\util\async_buf_read_ext.rs:348:12
+   ::: <cargo registry>/tokio-1.54.1/src/io/util/async_buf_read_ext.rs:348:12
     |
 348 |         fn lines(self) -> Lines<Self>
     |            ----- the method is available for `tokio::io::BufReader<tokio::net::TcpStream>` here
@@ -948,7 +949,7 @@ async fn main() {
 
 ### 案例 4：跨 await 持有 std MutexGuard——future 不是 Send
 
-```rust,noplayground
+```rust,editable
 use std::sync::{Arc, Mutex};
 
 use tokio::io::AsyncWriteExt;
@@ -986,7 +987,7 @@ note: future is not `Send` as this value is used across an await
   9 |         stream.write_all(line.as_bytes()).await.unwrap();
     |                                           ^^^^^ await occurs here, with `guard` maybe used later
 note: required by a bound in `tokio::spawn`
-   --> C:\Users\yujinhao\.cargo\registry\src\rsproxy.cn-e3de039b2554c837\tokio-1.54.1\src\task\spawn.rs:176:21
+   --> <cargo registry>/tokio-1.54.1/src/task/spawn.rs:176:21
     |
 174 |     pub fn spawn<F>(future: F) -> JoinHandle<F::Output>
 175 |     where
@@ -1029,7 +1030,7 @@ async fn main() {
 
 ### 案例 5：遍历 HashMap 的同时插入——E0502
 
-```rust,noplayground
+```rust,editable
 use std::collections::HashMap;
 
 use tokio::sync::mpsc;
@@ -1130,7 +1131,7 @@ test result: ok. 6 passed; 0 failed
 | `src/main.rs` | 参数、`watch` 关闭信号、`spawn(serve)` 加 `select!` 等 Ctrl-C |
 | `Cargo.toml` | 唯一依赖是 tokio（`features = ["full"]`） |
 
-43.2 给的是 `handle_conn` 的骨架，43.5 给写 task，43.6 给读循环——项目里能看到它们拼成的完整函数，以及退出时那句 `Leave` 与 `write_task.await`。
+43.2 给的是 `handle_conn` 的骨架，43.5 给写 task，43.6 给读循环——项目里能看到它们拼成的完整函数，以及退出时那句 `Leave` 与 `writers.join_next().await`。
 
 ## 43.11 动手练习
 
@@ -1171,7 +1172,7 @@ test result: ok. 6 passed; 0 failed
 3. broadcast 是有损扇出，mpsc 是有界背压的点对点通道。聊天室要的是后者；broadcast 的 Lagged 不是 bug，是它的设计前提被违反时的表现。
 4. 有界队列加丢最新，是「慢客户端不拖累别人」的可执行定义；dropped 计数是这条策略唯一的观测面，没有它就是在盲飞。
 5. lines() 需要 BufReader 和 AsyncBufReadExt 同时到位，写侧需要 BufWriter 加显式 flush。忘记 flush 的典型症状是本机碰巧能过、换台机器就卡住。
-6. select! 的正确性取决于被取消的 future 是否可取消安全。read_line 不是，所以每轮新建 String，并且只在完成分支里使用它。
+6. select! 的正确性取决于被取消的 future 是否可取消安全。`read_line` 在取消时可能丢失部分输入；本章只在结束连接时放弃这次读取。
 7. 优雅退出是一条有顺序的链条：信号、accept 停、hub 退、丢掉 Client、写 task 收到 None、连接 task 结束、JoinSet 兜底。顺序反了就会卡在某个 await 上。
 8. spawn 要求 Send 加 static，意味着所有权必须拆开：into_split 拆 socket，clone 发句柄，Arc 共享只读数据。它也意味着跨 await 不能持有非 Send 的 guard。
 9. 泄漏有三种形态：忘记发 Leave、发了 Leave 但没 remove、只 spawn 不 join。Drop 是收尾机制，但别指望在 Drop 里 await。

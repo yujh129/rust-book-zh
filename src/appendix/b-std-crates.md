@@ -116,7 +116,7 @@ Result 额外有 `map_err`、`and`、`or_else`、`inspect`、`inspect_err`；Opt
 | Mutex / RwLock | 跨线程互斥 / 读写锁 | 22 |
 | AtomicUsize 等 | 无锁计数与标志 | 22 |
 | Cow | 写时克隆，读多写少时省分配 | 18 |
-| Pin | 保证值不被移动，异步与自引用结构需要 | 24 |
+| Pin | 为地址敏感的值维持固定地址；指针句柄本身可以移动 | 24 |
 
 ## B.3 内置宏速查
 

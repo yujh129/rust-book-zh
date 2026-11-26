@@ -6,7 +6,7 @@
 > - 写一个能处理 TCP 粘包与半包的状态无关解析器：`parse_command(&[u8]) -> Result<Option<(Vec<String>, usize)>, String>`
 > - 用 `HashMap<String, Entry>` 加每次读写时的惰性过期，实现 SET/GET/DEL/EXISTS/INCR/KEYS/EXPIRE/TTL
 > - 把内存结构包进 `Arc<Mutex<Store>>`，用「每连接一个线程」的模型同时服务多个客户端
-> - 用同一个 crate 同时产出库与二进制，让 9 个单元测试与 4 个端到端测试都能 `cargo test` 一键跑通
+> - 用同一个 crate 同时产出库与二进制，让 10 个单元测试与 4 个端到端测试都能 `cargo test` 一键跑通
 
 前三个项目（minigrep、JSON 解析器、HTTP 服务器）处理的都是「一问一答就结束」的连接。这一章要做的东西不一样：客户端连着不断开，一条连接上可能连续发出几百条命令，服务端要一直记住状态。这就是数据库的样子。
 
@@ -32,7 +32,7 @@
 
 验收标准写成三条，后面每写完一层就对照一次：
 
-1. `cargo test` 全绿：9 个单元测试（协议解析 4 个、存储语义 4 个、回复编码 1 个）加 4 个端到端测试，多出来的那个专门盯第 3 条验收标准。
+1. `cargo test` 全绿：10 个单元测试（协议解析 5 个、存储语义 4 个、回复编码 1 个）加 4 个端到端测试，多出来的那个专门盯第 3 条验收标准。
 2. 真实客户端能连上来发命令，收到逐字节符合 RESP 的回复。
 3. 两个客户端同时连上，一个写一个读，读到的是同一份数据——这就逼出了 `Arc<Mutex<..>>`。
 
@@ -104,7 +104,13 @@ pub fn parse_command(buf: &[u8]) -> Result<Option<(Vec<String>, usize)>, String>
 ```rust,noplayground
 struct Entry {
     value: String,
-    expires_at: Option<Instant>,
+    expiry: Option<(Instant, Duration)>, // 设置时刻与有效时长
+}
+
+impl Entry {
+    fn remaining(&self, now: Instant) -> Option<Duration> {
+        self.expiry.map(|(start, ttl)| ttl.saturating_sub(now.saturating_duration_since(start)))
+    }
 }
 
 pub struct Store {
@@ -112,7 +118,7 @@ pub struct Store {
 }
 ```
 
-`Instant` 而不是 `SystemTime`，这不是随手选的：`SystemTime` 会被 NTP 校时、时区设置、用户手动改钟影响，可能往回跳，导致「过期时间在未来某刻」的键突然变回未过期，也可能一下子全过期。`Instant` 是单调时钟，只会往前走，`Instant::now() + Duration::from_secs(30)` 的语义稳定。代价是它不能序列化（重启后没有参照），所以我们不做持久化。
+这里用单调时钟 `Instant` 测量已经过去多久。系统校时可能改变 `SystemTime`，切换时区只影响显示。配套代码存设置时刻和时长，用 `saturating_sub` 计算剩余时间；直接把任意输入秒数加到 `Instant` 上可能溢出。`TTL` 以 `i64` 回复，极大的剩余秒数封顶为 `i64::MAX`。
 
 过期有两种实现策略：
 
@@ -128,7 +134,7 @@ pub struct Store {
 ```rust,noplayground
 fn live(&mut self, key: &str) -> Option<&mut Entry> {
     let expired = match self.map.get(key) {
-        Some(e) => matches!(e.expires_at, Some(t) if t <= Instant::now()),
+        Some(e) => e.remaining(Instant::now()) == Some(Duration::ZERO),
         None => return None,
     };
     if expired {
@@ -139,7 +145,7 @@ fn live(&mut self, key: &str) -> Option<&mut Entry> {
 }
 ```
 
-这段代码有个值得注意的地方：`self.map.get(key)` 拿到的 `Option<&Entry>` 借着 `self`，紧接着 `self.map.remove(key)` 需要 `&mut self`。如果先 `let entry = self.map.get(key)` 再在 `if` 里 remove，编译器会直接拒绝，报 `cannot borrow self.map as mutable because it is also borrowed as immutable`。我们只把「是否过期」这个 `bool` 取出来，借用就在 `match` 结束时释放了，后面的 `remove` 与 `get_mut` 才不会打架。这是第 6 章借用规则在真实代码里的样子。
+这段代码有个值得注意的地方：`self.map.get(key)` 拿到的 `Option<&Entry>` 借着 `self`，紧接着 `self.map.remove(key)` 需要 `&mut self`。如果仍要在删除之后使用从 `get` 借来的引用，编译器会拒绝，报 `cannot borrow self.map as mutable because it is also borrowed as immutable`。我们只把「是否过期」这个 `bool` 取出来，借用就在 `match` 结束时释放了，后面的 `remove` 与 `get_mut` 才不会打架。这是第 6 章借用规则在真实代码里的样子。
 
 `TTL` 的三个返回值是 Redis 的约定，别自己发明：
 
@@ -183,7 +189,10 @@ pub fn parse_command(buf: &[u8]) -> Result<Option<(Vec<String>, usize)>, String>
         .parse()
         .map_err(|_| String::from("数组长度非法"))?;
     let mut pos = end + 2;
-    let mut args = Vec::with_capacity(count);
+    if count > 1024 {
+        return Err(String::from("参数过多"));
+    }
+    let mut args = Vec::new();
     for _ in 0..count {
         if pos >= buf.len() {
             return Ok(None);
@@ -198,18 +207,25 @@ pub fn parse_command(buf: &[u8]) -> Result<Option<(Vec<String>, usize)>, String>
             .map_err(|_| String::from("非法 UTF-8"))?
             .parse()
             .map_err(|_| String::from("bulk 长度非法"))?;
+        if len > 8 * 1024 * 1024 {
+            return Err(String::from("单个参数过长"));
+        }
         let body_start = hdr_end + 2;
         // len 也是客户端给的，直接相加可能整数溢出。
         let Some(body_end) = body_start.checked_add(len) else {
             return Err(String::from("bulk 长度非法"));
         };
-        if buf.len() < body_end + 2 {
+        let frame_end = body_end.checked_add(2).ok_or("bulk 长度非法")?;
+        if buf.len() < frame_end {
             return Ok(None);
+        }
+        if &buf[body_end..frame_end] != b"\r\n" {
+            return Err(String::from("bulk 缺少 CRLF"));
         }
         let s = std::str::from_utf8(&buf[body_start..body_end])
             .map_err(|_| String::from("非法 UTF-8"))?;
         args.push(s.to_string());
-        pos = body_end + 2;
+        pos = frame_end;
     }
     Ok(Some((args, pos)))
 }
@@ -217,12 +233,12 @@ pub fn parse_command(buf: &[u8]) -> Result<Option<(Vec<String>, usize)>, String>
 
 几处细节：
 
-- 判断用 `buf.len() < body_end + 2` 而不是 `< body_end`：正文后面还有两个字节的 CRLF，少一个字节都算没读完。写成后者会在下一步 `pos = body_end + 2` 时越界。
-- `body_start + len` 用 `checked_add` 而不是直接相加：`len` 同样是客户端说了算，发一个 `$18446744073709551615` 的头就能让加法在 debug 构建下整数溢出、直接 panic。溢出当协议错误处理，连复用连接的机会都不给。
+- `frame_end` 在正文后再计入两个字节。不足则继续接收；字节齐了还要核对确实是 `\r\n`，才能推进到下一帧。
+- 正文起点、长度和分隔符长度用 `checked_add` 组合；过大的单参数长度会先被 8 MiB 上限拒绝。溢出当协议错误处理，连复用连接的机会都不给。
 - 所有 `Err` 都是**协议错误**，不是**命令错误**。`SET` 少了一个参数是命令错误，应该回一个 RESP 错误但仍保持连接；而 `*3` 后面跟 `XX` 这种是协议错误，说明字节流已经没法继续切了，只能断开。
 - 用 `String` 存参数而不是 `&[u8]`：省掉生命周期标注，代价是不能存二进制值。真实 Redis 的键值都是字节串，如果要做二进制安全，把 `String` 换成 `Vec<u8>`，把 utf8 校验删掉即可。
 
-四个单元测试覆盖了三种网络状况和一个粘包场景：
+下面四个单元测试覆盖半包、整包与粘包；配套工程还单独测试长度上限和帧结束符：
 
 ```rust,noplayground
 #[test]
@@ -319,9 +335,9 @@ pub fn execute(store: &mut Store, args: &[String]) -> Reply {
     let cmd = args[0].to_uppercase();
     let rest = &args[1..];
     match cmd.as_str() {
-        "PING" => Reply::Simple(String::from("PONG")),
-        "SET" if rest.len() >= 2 => {
-            if rest.len() >= 4 && rest[2].eq_ignore_ascii_case("EX") {
+        "PING" if rest.is_empty() => Reply::Simple(String::from("PONG")),
+        "SET" if rest.len() == 2 || (rest.len() == 4 && rest[2].eq_ignore_ascii_case("EX")) => {
+            if rest.len() == 4 {
                 match rest[3].parse::<u64>() {
                     Ok(secs) => store.set(&rest[0], &rest[1], Some(Duration::from_secs(secs))),
                     // EX 后面不是数字：这是命令错误，不能悄悄当成「不过期」。
@@ -332,7 +348,7 @@ pub fn execute(store: &mut Store, args: &[String]) -> Reply {
             }
             Reply::Simple(String::from("OK"))
         }
-        "SET" => Reply::Error(String::from("SET 需要 key 和 value")),
+        "SET" => Reply::Error(String::from("用法：SET key value [EX 秒数]")),
         "GET" if rest.len() == 1 => Reply::Bulk(store.get(&rest[0])),
         "GET" => Reply::Error(String::from("GET 需要恰好一个 key")),
         "DEL" if rest.len() == 1 => Reply::Integer(store.del(&rest[0]) as i64),
@@ -341,17 +357,18 @@ pub fn execute(store: &mut Store, args: &[String]) -> Reply {
             Ok(n) => Reply::Integer(n),
             Err(e) => Reply::Error(e.to_string()),
         },
-        "KEYS" => Reply::Bulk(Some(store.keys().join(" "))),
+        "KEYS" if rest.is_empty() => Reply::Bulk(Some(store.keys().join(" "))),
         "EXPIRE" if rest.len() == 2 => match rest[1].parse::<u64>() {
             Ok(secs) => Reply::Integer(store.expire(&rest[0], secs) as i64),
             Err(_) => Reply::Error(String::from("EXPIRE 的秒数非法")),
         },
         "TTL" if rest.len() == 1 => Reply::Integer(store.ttl(&rest[0])),
-        "FLUSHALL" => {
+        "FLUSHALL" if rest.is_empty() => {
             *store = Store::new();
             Reply::Simple(String::from("OK"))
         }
-        "QUIT" => Reply::Simple(String::from("OK")),
+        "QUIT" if rest.is_empty() => Reply::Simple(String::from("OK")),
+        "PING" | "KEYS" | "FLUSHALL" | "QUIT" => Reply::Error(String::from("命令不接受参数")),
         _ => Reply::Error(format!("未知命令 {}", args[0])),
     }
 }
@@ -381,13 +398,17 @@ pub fn handle_connection(mut stream: TcpStream, store: Arc<Mutex<Store>>) {
             Ok(n) => n,
             Err(_) => return,
         };
+        if buf.len() + n > 64 * 1024 * 1024 {
+            let _ = stream.write_all(&Reply::Error(String::from("请求过大")).to_bytes());
+            return;
+        }
         buf.extend_from_slice(&chunk[..n]);
         loop {
             match parse_command(&buf) {
                 Ok(Some((args, used))) => {
                     buf.drain(..used);
                     // *0 是合法输入，会解析出空参数表；直接取 args[0] 会先 panic。
-                    let quit = args.first().is_some_and(|a| a.eq_ignore_ascii_case("QUIT"));
+                    let quit = args.len() == 1 && args[0].eq_ignore_ascii_case("QUIT");
                     let reply = {
                         let mut guard = store.lock().unwrap();
                         execute(&mut guard, &args)
@@ -503,7 +524,7 @@ mini-redis 已启动：127.0.0.1:6399
 发送 "KEYS" → 收到 "$13"
 ```
 
-`GET greeting` 只打印 `$5`，因为 `--selftest` 用的读取函数会把 `hello` 的正文一起读掉（否则下一次读到的就是正文而不是回复头），但只把头部返回、打印出来。断言时我们只关心头部类型与长度：`$5` 已经说明「值存在且长 5 字节」，而长度的正确性由单元测试 `replies_have_correct_wire_format` 逐字节保证。真实客户端会把 `5 + 2` 个字节的正文交给业务层。
+`GET greeting` 只打印 `$5`，因为 `--selftest` 用的读取函数会把 `hello` 的正文一起读掉（否则下一次读到的就是正文而不是回复头），但只把头部返回、打印出来。断言时我们只关心头部类型与长度：`$5` 已经说明「值存在且长 5 字节」，而长度的正确性由单元测试 `replies_have_correct_wire_format` 逐字节保证。真实客户端会读完 5 个正文字节和末尾的 CRLF，只将正文交给业务层。
 
 ## 42.8 深入：这 600 行背后的取舍
 
@@ -529,9 +550,9 @@ mini-redis 已启动：127.0.0.1:6399
 
 ### 缓冲区没有上限，就是个 DoS 洞
 
-`buf` 是个会无限增长的 `Vec`。客户端只要发一个 `*100000000` 的头，然后慢慢喂数据，我们的 `Vec::with_capacity(count)` 会立刻尝试分配 8 亿个 `String` 的位置——直接 abort 或者被 OOM killer 干掉。真实 Redis 对 `*` 后面的数字有上限（1M），对单个 bulk 长度也有上限（512 MB）。
+接收缓冲区、参数个数和单个参数长度都需要独立上限。配套工程分别限制为 64 MiB、1024 个和 8 MiB，先检查再扩容。这样在收到不完整的输入时，每条连接的缓冲仍有上界。
 
-修法很简单，在 `execute` 之前加两道闸：
+可以把前文的三个限制提取为具名常量：
 
 ```rust,noplayground
 const MAX_ARGS: usize = 1024;
@@ -603,7 +624,7 @@ error[E0599]: no method named `read_line` found for struct `BufReader<R>` in the
   8 |     reader.read_line(&mut line).unwrap();
     |            ^^^^^^^^^ method not found in `BufReader<TcpStream>`
     |
-   ::: C:\Users\yujinhao\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library/alloc/src/io/buf_read.rs:342:8
+   ::: <rustup toolchain>/lib/rustlib/src/rust/library/alloc/src/io/buf_read.rs:342:8
     |
 342 |     fn read_line(&mut self, buf: &mut String) -> Result<usize> {
     |        --------- the method is available for `BufReader<TcpStream>` here
@@ -801,7 +822,7 @@ note: required because `shared` is used within this closure
   9 |         shared.borrow_mut().insert(String::from("k"), String::from("v"));
     |         ^^^^^^
 note: required by a bound in `spawn`
-   --> C:\Users\yujinhao\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library/std\src\thread\functions.rs:128:8
+   --> <rustup toolchain>/lib/rustlib/src/rust/library/std/src/thread/functions.rs:128:8
     |
 125 | pub fn spawn<F, T>(f: F) -> JoinHandle<T>
 ...
@@ -849,7 +870,7 @@ mini-redis 已启动：127.0.0.1:6379
 发送 "KEYS" → 收到 "$13"
 ```
 
-不带 `--selftest` 就是普通服务器：`cargo run --offline -- 6380`，再用 `redis-cli -p 6380` 或 `nc 127.0.0.1 6380` 连上去。`cargo test --offline` 跑 9 个单元测试加 4 个端到端测试。
+不带 `--selftest` 就是普通服务器：`cargo run --offline -- 6380`，再用 `redis-cli -p 6380` 或 `nc 127.0.0.1 6380` 连上去。`cargo test --offline` 跑 10 个单元测试加 4 个端到端测试。
 
 | 文件 | 内容 |
 | --- | --- |
@@ -864,7 +885,7 @@ mini-redis 已启动：127.0.0.1:6379
 ## 42.10 动手练习
 
 1. **加计数命令**：实现 `INCRBY key n` 与 `DECR key`，要求 `n` 不是整数、键值不是整数、加减溢出（用 `i64::checked_add`）三种情况都返回 RESP 错误而不是 panic。再补三个单元测试。
-2. **补资源上限**：按 42.8 末尾的片段加上 `MAX_ARGS`/`MAX_BULK`/`MAX_BUFFER`，并写一个测试：向 `parse_command` 传入 `*2000` 开头的缓冲区，断言它返回 `Err` 而不是试图分配。
+2. **验证资源上限**：分别测试 42.8 的 `MAX_ARGS`/`MAX_BULK`/`MAX_BUFFER`，并写一个测试：向 `parse_command` 传入 `*2000` 开头的缓冲区，断言它返回 `Err` 而不是试图分配。
 3. **改造 KEYS**：现在的 `KEYS` 在锁内做全表遍历并 `join`，键一多就会长时间持锁。改成返回 `Vec<String>` 的 `keys_snapshot()`，在锁内只做 clone，把排序和拼接移到锁外。测一下十万键时的差异。
 4. **换成线程池**：把「每连接一线程」改成「固定 4 个 worker 线程 + `mpsc` 任务队列」，连接到来时把 `TcpStream` 塞进队列。用 1000 个并发连接压一下，比较两种模型的成功连接数与内存占用（任务提示：工作线程从队列取到一个连接后要一直服务到它断开，这其实退化成了「4 个线程轮流被一个长连接占死」，想一想为什么这是错的，正确的做法是什么）。
 5. **测 Nagle 的影响**：写一个循环发 1000 次 `PING` 并计时的基准程序，分别在服务端 `set_nodelay(true)` 与默认设置下各跑一次。在本地回环上差异可能只有几毫秒，但把客户端放到另一台机器上（或者用 `tc`/`clumsy` 注入 40ms 延迟）差异会非常明显——解释为什么。
@@ -880,4 +901,4 @@ mini-redis 已启动：127.0.0.1:6379
 - `Arc` 不是 `Copy`：循环里给每个线程发句柄必须 `Arc::clone(&store)`，并且要放在循环体内。
 - 每连接一线程的模型简单但扩展性差（8 MiB 虚拟栈/线程），上万连接要换事件循环；这正是 Tokio 存在的理由。
 - 任何来自外部的长度字段（`*N`、`$N`）都必须先校验上限再分配内存，否则就是一个远程 OOM 漏洞。
-- `cargo test` 的 9 个单元测试 + 4 个端到端测试覆盖了协议、存储、并发三条主线；写网络程序时，把「解析」和「IO」拆开是可测试性的关键。
+- `cargo test` 的 10 个单元测试 + 4 个端到端测试覆盖了协议、存储、并发三条主线；写网络程序时，把「解析」和「IO」拆开是可测试性的关键。

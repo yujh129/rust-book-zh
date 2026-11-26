@@ -42,7 +42,10 @@ pub fn parse_command(buf: &[u8]) -> Result<Option<(Vec<String>, usize)>, String>
         .parse()
         .map_err(|_| String::from("数组长度非法"))?;
     let mut pos = end + 2;
-    let mut args = Vec::with_capacity(count);
+    if count > 1024 {
+        return Err(String::from("参数过多"));
+    }
+    let mut args = Vec::new();
     for _ in 0..count {
         if pos >= buf.len() {
             return Ok(None);
@@ -57,20 +60,26 @@ pub fn parse_command(buf: &[u8]) -> Result<Option<(Vec<String>, usize)>, String>
             .map_err(|_| String::from("非法 UTF-8"))?
             .parse()
             .map_err(|_| String::from("bulk 长度非法"))?;
+        if len > 8 * 1024 * 1024 {
+            return Err(String::from("单个参数过长"));
+        }
         let body_start = hdr_end + 2;
-        // 书上直接写 body_start + len：$18446744073709551615 这种头会让它
-        // 在 debug 构建下整数溢出 panic。改成 checked_add，越界就当协议错误。
+        // 长度以及尾部分隔符都要计入本帧。
         let Some(body_end) = body_start.checked_add(len) else {
             return Err(String::from("bulk 长度非法"));
         };
         // 正文后面还有两个字节的 CRLF，少一个字节都算没读完。
-        if buf.len() < body_end + 2 {
+        let frame_end = body_end.checked_add(2).ok_or("bulk 长度非法")?;
+        if buf.len() < frame_end {
             return Ok(None);
+        }
+        if &buf[body_end..frame_end] != b"\r\n" {
+            return Err(String::from("bulk 缺少 CRLF"));
         }
         let s = std::str::from_utf8(&buf[body_start..body_end])
             .map_err(|_| String::from("非法 UTF-8"))?;
         args.push(s.to_string());
-        pos = body_end + 2;
+        pos = frame_end;
     }
     Ok(Some((args, pos)))
 }
@@ -95,6 +104,14 @@ mod tests {
             vec![String::from("SET"), String::from("foo"), String::from("bar")]
         );
         assert_eq!(used, raw.len());
+    }
+
+    #[test]
+    fn rejects_invalid_bulk_terminator_and_oversized_frames() {
+        assert!(parse_command(b"*1\r\n$4\r\nPING!!").is_err());
+        assert!(parse_command(b"*1025\r\n").is_err());
+        assert!(parse_command(b"*1\r\n$8388609\r\n").is_err());
+        assert!(parse_command(b"*1\r\n$4\r\nPING\r").unwrap().is_none());
     }
 
     #[test]

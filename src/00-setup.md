@@ -52,7 +52,7 @@ sudo dnf groupinstall "Development Tools"   # Fedora
 
 ## 1.3 国内镜像：先把下载速度解决
 
-不配置镜像，`cargo build` 拉依赖可能慢到无法忍受。两个层面都要配。
+能正常访问官方源时可直接跳到 1.4。工具链下载和 crate 下载使用不同的服务，只需为遇到网络问题的那一项设置镜像。
 
 ### 工具链镜像（rustup）
 
@@ -90,7 +90,7 @@ git-fetch-with-cli = true
 
 > 镜像地址会变，如果失效，搜索"rsproxy"或"字节跳动 Rust 镜像"获取最新的配置片段。`git-fetch-with-cli = true` 能避免某些网络环境下 git 依赖拉取卡死。
 
-配好后执行 `rustup update`，如果速度明显变快就说明生效了。
+重开终端后，`rustup update` 使用工具链下载配置。进入有依赖的工程执行 `cargo fetch -v`，可以从 Cargo 输出核对使用的 registry。
 
 ## 1.4 编辑器
 
@@ -117,14 +117,14 @@ rustup component add rustfmt clippy
 再加几个提升效率的工具（可选）：
 
 ```bash
-cargo install cargo-watch cargo-expand cargo-edit
+cargo install cargo-watch cargo-expand
 ```
 
 | 工具 | 用途 |
 | --- | --- |
 | `cargo watch -x run` | 文件变化就重新运行，省掉反复敲命令 |
 | `cargo expand` | 展开宏之后的代码，理解 `derive` 和 `macro_rules!` 必备 |
-| `cargo add serde` | 命令行添加依赖，自动写入正确的版本 |
+| `cargo add serde` | Cargo 内置命令，把依赖版本要求写入清单 |
 | `cargo tree` | 查看依赖树，排查版本冲突 |
 
 `cargo-expand` 依赖 nightly 的 `rustc -Zunpretty`，它会自动提示你安装：`rustup toolchain install nightly`。
@@ -169,7 +169,7 @@ $ cargo clippy
 
 ```bash
 # 如果你还没装 mdbook
-cargo install mdbook
+cargo install mdbook --version 0.5.4 --locked
 
 # 在项目根目录启动本地服务器，改文件会自动刷新
 mdbook serve --open
@@ -182,11 +182,14 @@ mdbook build
 
 ## 1.8 在浏览器里改代码、跑代码
 
-本书的每个「典型错误案例」都带一个编辑器：那几行是真能改的，点 **Run** 就会看到真实的编译器输出。先跑一遍错误版，再照着修复版改一行，对比两次结果——这是全书最主要的学习方式。
+标为 `editable` 的错误案例带有编辑器；多文件工程及需要特定依赖的片段请在本地复现：那几行是真能改的，点 **Run** 就会看到真实的编译器输出。先跑一遍错误版，再照着修复版改一行，对比两次结果——这是全书最主要的学习方式。
 
 默认情况下 Run 连的是官方 Playground（<https://play.rust-lang.org>），需要联网。如果你已经按前面的步骤装好 Rust，可以让代码在**自己机器上离线编译运行**：
 
 ```bash
+# 首次使用时联网下载锁定的依赖；缓存齐备后可以断网
+cargo fetch --locked --manifest-path tools/playground/Cargo.toml
+
 # 在项目根目录：同时启动本地运行器和 mdbook 预览
 python tools/serve_book.py
 
@@ -196,15 +199,17 @@ python tools/serve_book.py --no-serve
 
 Windows 上没有 `python` 命令就用 `py -3 tools/serve_book.py`。启动后打开 <http://127.0.0.1:3000>：左下角弹出绿色的「本地运行器 已连接 · 9 个 crate」，说明链路通了；如果显示橙色提示，说明运行器没起，Run 会自动退回官方 Playground。
 
-本地运行器支持这些 crate：`anyhow`、`clap`、`rand`、`serde`、`serde_json`、`thiserror`、`tokio`、`tracing`、`tracing-subscriber`。单个程序最长跑 4 秒，超时会被杀掉——写个死循环正好用来体会它会挂在哪。
+本地运行器支持这些 crate：`anyhow`、`clap`、`rand`、`serde`、`serde_json`、`thiserror`、`tokio`、`tracing`、`tracing-subscriber`。本地编译阶段限时 90 秒；普通程序执行限时 4 秒，测试执行限时 20 秒。超时会终止对应的命令。
 
-带 `#[test]` 或 `#[cfg(test)]` 的代码块会被当成测试来跑（等价于 `cargo test`），所以你看到的是 `running 1 test`、`test tests::foo ... ok`、`test result: FAILED. 0 passed; 1 failed` 这样的输出，`.rs` 里的断言失败会连 `left` / `right` 一起打出来——第 26 章那几个测试案例就是靠它跑起来的。
+运行器启动时会在后台先把这 9 个依赖编译一遍（日志里出现 `[pg] warm-up ok in ...s`），所以第一次点 Run 可能需要等一会儿，之后每次都是秒级。浏览器对本地运行器的等待上限是 3 分钟，足够冷编译跑完。
+
+在本地运行器中，带 `#[test]` 或 `#[cfg(test)]` 的代码块会被当成测试来跑（等价于 `cargo test`），所以你看到的是 `running 1 test`、`test tests::foo ... ok`、`test result: FAILED. 0 passed; 1 failed` 这样的输出，`.rs` 里的断言失败会连 `left` / `right` 一起打出来——第 26 章那几个测试案例就是靠它跑起来的。
 
 | 现象 | 原因 | 解决 |
 | --- | --- | --- |
 | 点 Run 没反应，左下角橙色提示 | 本地运行器没启动 | 在项目根目录执行 `python tools/serve_book.py` |
 | 改完之后 Run 报了个新错 | 改错了——这正是练习的意义 | 读报错，和紧跟代码后面的那几行 `error[...]` 对照 |
-| 点 Run 转圈很久 | 本地编译超过了浏览器给的 6 秒 | 稍后重试；第二次通常就快了 |
+| 点 Run 转圈几十秒 | 第一次要编译整个运行器工程（启动时已在后台预热） | 等它跑完；之后的运行都是秒级 |
 
 ## 1.9 常见问题
 
@@ -215,7 +220,7 @@ Windows 上没有 `python` 命令就用 `py -3 tools/serve_book.py`。启动后�
 | `cargo build` 拉依赖超时 | 没配 crates 镜像 | 按 1.3 配置 `config.toml` |
 | 终端中文乱码 | Windows 控制台代码页不是 UTF-8 | `chcp 65001`，或在 Windows Terminal 里设置 |
 | 项目放在中文路径下报奇怪的错 | 少数工具链组件对非 ASCII 路径支持不佳 | 把项目放到纯英文路径，例如 `D:\\code\\hello` |
-| `cargo run` 说 `no targets specified` | 当前目录不在项目根，或 `Cargo.toml` 里没有 `[[bin]]` / `src/main.rs` | `cd` 到含 `Cargo.toml` 的目录 |
+| `cargo run` 说 `no targets specified` | Cargo 找到清单，但既没有自动发现目标也没有显式目标 | 创建 `src/main.rs` 或 `src/lib.rs`，或在清单中配置目标路径 |
 
 ---
 

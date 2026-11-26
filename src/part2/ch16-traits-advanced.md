@@ -52,7 +52,8 @@ struct NewsArticle {
 impl Summary for NewsArticle {
     type Output = String;
     fn summarize(&self) -> String {
-        format!("{}: {}", self.title, &self.body[..20.min(self.body.len())])
+        let excerpt: String = self.body.chars().take(20).collect();
+        format!("{}: {}", self.title, excerpt)
     }
 }
 

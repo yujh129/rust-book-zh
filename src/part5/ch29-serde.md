@@ -722,7 +722,7 @@ help: a function with a similar name exists
 
 ### 案例 1：忘了 derive，编译器让你补
 
-```rust,noplayground
+```rust,editable
 use serde::Serialize;
 
 #[derive(Debug)]
@@ -778,7 +778,7 @@ struct Config {
 
 ### 案例 2：借用了局部变量还想把它返回
 
-```rust,noplayground
+```rust,editable
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -979,17 +979,17 @@ enum Ext {
 提示：`BufWriter` 的 `into_inner()` 或显式 `drop` 才能保证缓冲刷盘；读的时候用 `BufReader` 包一层，否则每次 `read` 只拿到几十字节。
 
 **练习 5（配置演进）**：现有 v1 配置 `{"name": "svc"}`，你要引入 v2 增加 `retries`（默认 3）、把 `name` 改名为 `service`、并新增可选 `tags`。
-要求：v1 文件能直接读进来；写出时是新格式；`retries: 0` 必须显式写出（提示：`skip_serializing_if` 只能跳过空集合，不能跳过 `0`）。最后写一个「读 v1 → 写 v2 → 再读 v2」的往返测试。
+要求：v1 文件能直接读进来；写出时是新格式；`retries: 0` 必须显式写出（提示：给 `tags` 配 `Vec::is_empty`；不要给 `retries` 配跳过零值的谓词）。最后写一个「读 v1 → 写 v2 → 再读 v2」的往返测试。
 
 ## 29.10 小结
 
 1. serde 的价值是把 N×M 的转换问题拆成「类型 → 数据模型」和「数据模型 → 格式」两半，一份 derive 通吃 JSON/TOML/YAML/MessagePack。
 2. 类型只实现 `Serialize` / `Deserialize`，格式只实现 `Serializer` / `Deserializer`；`Deserialize<'de>` 的生命周期参数是零拷贝的入口。
 3. 属性分三层：容器（整个 struct/enum）、字段、变体。`rename_all`、`default`、`deny_unknown_fields` 在容器上；`alias`、`skip_serializing_if`、`flatten`、`with` 在字段上。
-4. 枚举四种表示：默认外部标签最百搭；内部标签 `tag` 最像「类型字段」但只支持结构体变体；相邻标签 `tag + content` 形状任意；`untagged` 按结构匹配、错误信息最差。
+4. 枚举四种表示：默认外部标签最百搭；内部标签 `tag` 最像「类型字段」可用于结构体、单元变体和内容为结构体或映射的 newtype 变体；元组变体不支持；相邻标签 `tag + content` 形状任意；`untagged` 按结构匹配、错误信息最差。
 5. 缺字段报 `missing field`，多字段默认**静默忽略**，类型不对报 `invalid type`——这三条默认行为决定了你的配置迁移策略。
 6. `#[serde(default)]` 只对「缺失」生效，不对「解析失败」生效；配置写错就该失败，别用兜底掩盖。
 7. 手写 `Deserialize` 的关键是 `Visitor`：按形状实现 `visit_u64`、`visit_str` 等方法，用 `E::custom` 补充上下文；`deserialize_any` 只适用于自描述格式。
 8. `untagged` 与 `flatten` 都会先把输入物化成中间表示，带来内存与速度成本，并且与非自描述格式不兼容；不要放进热路径。
 9. 本机实测（20 万条、62 字节/条）：`to_writer` 比 `to_string` 快约 30%，`to_value` 慢 4 倍，`from_str` 吞吐约 130 MB/s——批量输出用 `to_writer` + 缓冲，热路径别绕 `Value`。
-10. `#[serde(with)]` 是给外部类型补实现的唯一干净办法，模块必须同时有 `serialize` 和 `deserialize`，只缺一个就会报 E0425。
+10. `#[serde(with)]` 按字段选择转换模块；同时派生读写时需要 `serialize` 和 `deserialize`。只改一个方向可以用 `serialize_with` 或 `deserialize_with`，也可用 newtype 包装外部类型。

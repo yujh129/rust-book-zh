@@ -700,7 +700,7 @@ struct Cli {
 }
 
 fn main() {
-    println!("{}", Cli::parse().port);
+    println!("{}", Cli::parse_from(["demo", "--port", "8080"]).port);
 }
 ```
 
@@ -773,7 +773,7 @@ enum Command {
 }
 
 fn main() {
-    let cli = Cli::parse();
+    let cli = Cli::parse_from(["demo", "add", "hello"]);
     println!("{:?}", cli.command);
 }
 ```

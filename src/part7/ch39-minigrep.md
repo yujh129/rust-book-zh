@@ -547,7 +547,7 @@ fn main() {
 
 ### 案例 1：返回引用却不标注生命周期
 
-```rust,noplayground
+```rust,editable
 use std::fs;
 
 fn search<'a>(query: &str, contents: &'a str) -> Vec<&str> {
@@ -593,7 +593,7 @@ fn main() {
 
 ### 案例 2：返回借用局部变量的切片
 
-```rust,noplayground
+```rust,editable
 fn first_word(s: &str) -> &str {
     let lower = s.to_lowercase();
     lower.split_whitespace().next().unwrap()
@@ -637,7 +637,7 @@ fn main() {
 
 ### 案例 3：在返回 () 的 main 里用 ?
 
-```rust,noplayground
+```rust,editable
 fn main() {
     let contents = std::fs::read_to_string("poem.txt")?;
     println!("{}", contents);
@@ -676,7 +676,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ### 案例 4：ExitCode 与整数混用
 
-```rust,noplayground
+```rust,editable
 use std::env;
 use std::process::ExitCode;
 
@@ -723,7 +723,7 @@ fn main() -> ExitCode {
 
 ### 案例 5：把 Vec 移进函数后又使用
 
-```rust,noplayground
+```rust,editable
 use std::env;
 
 #[derive(Debug)]

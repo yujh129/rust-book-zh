@@ -273,7 +273,7 @@ async fn main() {
 }
 ```
 
-`timeout` 的价值在于**取消**：超时后内部的 Future 被 drop，它持有的资源随之释放。这是异步相比线程的一个巨大优势——线程没法被安全地杀掉，Future 可以。
+`timeout` 到期返回 `Elapsed`；丢弃包装器会丢弃其拥有的内部 future。计时器不能抢占一次迟迟不返回的 `poll`。若传入 `tokio::spawn` 返回的 `JoinHandle`，丢弃句柄只会分离任务；需要停止该任务时应保留句柄并显式 `abort`。
 
 ### 超时与重试的组合
 
@@ -403,7 +403,8 @@ worker0   worker1   worker2     ← 每个线程一个本地队列
 | | `current_thread` | `multi_thread` |
 |---|---|---|
 | 线程数 | 1 | CPU 核数 |
-| 是否要求 Future: Send | 不需要 | 需要 |
+| `tokio::spawn` 的 future | 需要 `Send` | 需要 `Send` |
+| `block_on` 的根 future | 可为 `!Send` | 可为 `!Send` |
 | 适用 | 单连接、嵌入式、测试 | 服务端 |
 | 创建 | `Builder::new_current_thread()` | `Builder::new_multi_thread()` |
 
@@ -442,36 +443,50 @@ fn main() {
 
 ### 案例 1：跨 await 持有 std 的 MutexGuard
 
-```rust,noplayground
+```rust,editable
 use std::sync::Mutex;
 
 #[tokio::main]
 async fn main() {
-    let m = Mutex::new(0);
-    let guard = m.lock().unwrap();
-    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-    println!("{}", *guard);
+    tokio::spawn(async {
+        let m = Mutex::new(0);
+        let guard = m.lock().unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        println!("{}", *guard);
+    }).await.unwrap();
 }
 ```
 
 ```text
 error: future cannot be sent between threads safely
-   --> src/main.rs:6:5
+   --> src/main.rs:5:5
     |
-6   | /     tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-    | |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ await occurs here, with `guard` maybe used later
+  5 | /     tokio::spawn(async {
+  6 | |         let m = Mutex::new(0);
+  7 | |         let guard = m.lock().unwrap();
+  8 | |         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+  9 | |         println!("{}", *guard);
+ 10 | |     }).await.unwrap();
+    | |______^ future created by async block is not `Send`
     |
-    = help: within the async block, the trait `Send` is not implemented for `std::sync::MutexGuard<'_, i32>`
+    = help: within `{async block@src/main.rs:5:18: 5:23}`, the trait `Send` is not implemented for `std::sync::MutexGuard<'_, i32>`
 note: future is not `Send` as this value is used across an await
+   --> src/main.rs:8:66
     |
-6   |     let guard = m.lock().unwrap();
-    |         ----- has type `MutexGuard<'_, i32>` which is not `Send`
-note: required by a bound in `spawn`
-    |     F: Future + Send + 'static,
-    |                 ^^^^ required by this bound in `spawn`
+  7 |         let guard = m.lock().unwrap();
+    |             ----- has type `std::sync::MutexGuard<'_, i32>` which is not `Send`
+  8 |         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    |                                                                  ^^^^^ await occurs here, with `guard` maybe used later
+note: required by a bound in `tokio::spawn`
+   --> <cargo registry>/tokio-1.54.1/src/task/spawn.rs:176:21
+    |
+174 |     pub fn spawn<F>(future: F) -> JoinHandle<F::Output>
+175 |     where
+176 |         F: Future + Send + 'static,
+    |                     ^^^^ required by this bound in `spawn`
 ```
 
-**原因**：`std::sync::MutexGuard` 内部持有线程 ID，用来校验解锁线程，所以设计上不允许跨线程移动（`!Send`）。持有它跨 `.await`，等于允许任务在另一个线程上继续，运行时就无法保证「同一个线程加解锁」。
+**原因**：`tokio::spawn` 要求提交的 future 实现 `Send`。这段代码在 `.await` 之后还使用 `guard`，状态机必须把它保存下来；标准库为兼容要求在原线程解锁的平台，把 `MutexGuard` 定义为 `!Send`。若仅在 `#[tokio::main]` 的根 future 中运行同样的代码，就没有这条 `spawn` 约束。
 
 **修复**：缩小临界区，让 Guard 在 await 之前被 drop；或改用 `tokio::sync::Mutex`：
 
@@ -499,7 +514,7 @@ async fn main() {
 
 ### 案例 2：把 main 写成 async
 
-```rust,noplayground
+```rust,editable
 async fn main() {
     println!("hello");
 }
@@ -528,7 +543,7 @@ async fn main() {
 
 ### 案例 3：spawn 捕获了借用而不是所有权
 
-```rust,noplayground
+```rust,editable
 #[tokio::main]
 async fn main() {
     let s = String::from("hi");
@@ -581,7 +596,7 @@ async fn main() {
 
 ### 案例 4：忘了 .await，直接解引用 Future
 
-```rust,noplayground
+```rust,editable
 #[tokio::main]
 async fn main() {
     let lock = tokio::sync::Mutex::new(0);
@@ -687,11 +702,11 @@ async fn main() {
 
 - `async` 是语言能力，**运行时**负责驱动 Future；tokio 是事实标准，`#[tokio::main]` 只是 `Builder::new_multi_thread().enable_all().build().block_on(...)` 的语法糖。
 - `.await` 是串行等待，`join!`/`spawn` 才是并发；`async` 本身不会让代码变快。
-- `tokio::spawn` 要求 `Future + Send + 'static`，所以任务必须拥有自己的数据（`move` + `Arc`/`clone`）。
-- `timeout` 能**取消** Future，这是异步相对线程的核心优势之一；`interval` 提供周期 tick。
-- 任何同步阻塞（`thread::sleep`、同步 IO、重 CPU 计算）都会饿死 worker，用 `spawn_blocking` 挪到阻塞线程池。
+- `tokio::spawn` 要求 `Future + Send + 'static`，所以任务不能借用可能提前失效的局部变量；也可持有 `&'static T`（`move` + `Arc`/`clone`）。
+- `timeout` 限制等待时间；后台任务的停止需要单独处理；`interval` 提供周期 tick。
+- 长时间同步阻塞会占住当前 worker，反复或全面阻塞可能使其他任务饥饿，用 `spawn_blocking` 挪到阻塞线程池。
 - 运行时用 work-stealing：每 worker 一个本地队列 + 全局队列 + 互相偷任务；`await` 挂起时立刻转去跑别的任务。
-- `current_thread` 运行时不需要 `Send`，适合测试和单连接场景；`multi_thread` 才是服务端默认。
+- 在 `current_thread` 上，`block_on` 可以驱动 `!Send` 的根 future，但 `tokio::spawn` 仍要求 `Send`。用 `LocalSet` 配合 `spawn_local` 可以执行 `!Send` 子任务。
 - `std::sync::MutexGuard` 是 `!Send`，不能跨 `.await`；需要跨 await 就用 `tokio::sync::Mutex`，临界区短就直接缩到 await 之前。
 - 调用 `async fn` 只是创建 Future，忘了 `.await` 时编译器会报「`impl Future` 不能解引用/不能显示」之类的怪错——看到 `impl Future` 先想 `.await`。
 - 在运行时里再 `block_on` 会 panic（`Cannot start a runtime from within a runtime`）；需要嵌套就 `spawn_blocking`。

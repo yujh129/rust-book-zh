@@ -12,8 +12,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: 章节结构、必备小节与交叉引用
         run: python tools/check_book.py
-      - name: 普通 rust 代码块逐块类型检查
+      - name: 普通 Rust 代码块逐块编译
         run: python tools/verify_blocks.py src
+      - name: 用书中记录的工具链核对可编辑案例
+        env:
+          RUSTUP_TOOLCHAIN: 1.100.0
+        run: |
+          rustup toolchain install 1.100.0 --profile minimal
+          cargo fetch --locked --manifest-path tools/playground/Cargo.toml
+          python tools/verify_cases.py --local
       - name: 六个项目工程构建并通过测试
         run: python tools/check_projects.py
       - name: 安装 mdBook 并构建（零警告）

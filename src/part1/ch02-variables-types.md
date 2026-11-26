@@ -131,7 +131,7 @@ fn main() {
 
 ```rust
 fn main() {
-    let x: u8 = 255;
+    let x = std::hint::black_box(u8::MAX); // 让加法在运行时求值
     let y = x + 1;   // debug 下 panic，release 下得到 0
     println!("{y}");
 }
@@ -244,8 +244,8 @@ fn main() {
 三个值得停下来想的数字：
 
 1. **`(u8, u32)` 占 8 字节而不是 5**。因为对齐（alignment）要求 `u32` 的地址是 4 的倍数，编译器在 `u8` 后插了 3 字节填充。字段顺序会影响结构体大小，第 8 章会讲怎么用手工排列省内存。
-2. **`&str` 是 16 字节**：8 字节指针 + 8 字节长度。它叫"胖指针"。数组切片 `&[T]` 同理。对比 C 的 `char*`（只有指针，长度靠 `\0` 或额外参数），Rust 把长度放进类型里，代价就是两倍体积。
-3. **`String` 是 24 字节**：指针 + 长度 + 容量，正好对应堆上 `Vec<u8>` 的三元组。
+2. **`&str` 是 16 字节**：8 字节指针 + 8 字节长度。它叫"胖指针"。数组切片 `&[T]` 同理。对比 C 的 `char*`（只有指针，长度靠 `\0` 或额外参数），切片引用携带运行时长度，代价就是两倍体积。
+3. **`String` 是 24 字节**：指针 + 长度 + 容量，这三个字段在 `String` 值本身，堆缓冲区存 UTF-8 字节。
 
 还有个更妙的优化——**空指针优化（niche optimization）**：
 
@@ -453,9 +453,9 @@ note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 ```
 
 **原因**：`u8` 最大 255，加到 260 溢出。debug build 会 panic。
-**修复**：按语义选一个——`total = total.saturating_add(10)`（封顶 255）、换成 `u32`（放宽范围）、或用 `checked_add` 显式处理错误。**千万不要只在 release 测**，因为那里会静默回绕成 4。
+**修复**：按语义选一个——`total = total.saturating_add(10)`（封顶 255）、换成 `u32`（放宽范围）、或用 `checked_add` 显式处理错误。**千万不要只在 release 测**，默认 release 配置下第一次加法回绕成 4，循环十次最终得到 94。
 
-### 案例 4：NaN 的比较永远为假
+### 案例 4：用 `partial_cmp(...).unwrap()` 排序时遇到 NaN
 
 ```rust,editable
 fn main() {
@@ -470,7 +470,7 @@ thread 'main' panicked at src/main.rs:3:38:
 called `Option::unwrap()` on a `None` value
 ```
 
-**原因**：NaN 与任何数比较都返回 `None`，`partial_cmp` 于是给出 `None`，`unwrap` panic。
+**原因**：`partial_cmp` 比较涉及 NaN 的两个值时返回 `None`，`unwrap` panic。
 **修复**：用 `f64::total_cmp`（把所有浮点值当成可比较的位模式）或者提前过滤：`list.retain(|x| !x.is_nan())`。
 
 ### 案例 5：as 静默截断
@@ -513,7 +513,7 @@ fn main() {
 - `const` 是编译期常量（会内联），`static` 有固定地址。
 - 整数溢出的四种策略对应四种业务语义；debug panic / release 回绕是刻意的性能取舍，可用 `overflow-checks` 固定。
 - 浮点数有 NaN、精度和 `Eq` 缺失三个坑；比较用误差，排序用 `total_cmp`。
-- `char` 是 4 字节的 Unicode 标量；`&str` 是 16 字节胖指针；`String` 是 24 字节。
+- `char` 是 4 字节的 Unicode 标量；本章的 64 位目标上，`&str` 占 16 字节，`String` 占 24 字节。
 - 对齐让 `(u8, u32)` 占 8 字节；空指针优化让 `Option<&T>` 零额外开销。
 - `as` 静默截断，`From/Into` 保证无损，`TryFrom` 返回 `Result`；收窄转换优先后者。
 - 类型推断是局部的：函数签名必须写全，`parse::<T>()` 这类泛型调用常常需要标注或后续用法给线索。

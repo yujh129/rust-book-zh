@@ -660,7 +660,7 @@ Connection: close
 
 按 Ctrl-C 时，终端给进程发 SIGINT。标准库没有信号处理 API，默认行为是进程立刻终止：main 不会返回，ThreadPool 的 Drop 不会执行，正在写响应的 worker 被一起杀掉。
 
-要优雅退出需要自己接信号。一种做法是用 ctrlc crate 注册回调，把 `Arc<AtomicBool>` 置为 false；另一种是不引入依赖，但必须把 accept 循环改成非阻塞轮询（set_nonblocking(true)），遇到 WouldBlock 时检查标志并 sleep 一小会儿。两种做法都要求你接受一个事实：阻塞在 accept 里的线程没有可移植的办法被叫醒。
+要让 Ctrl-C 触发优雅退出，需要接收停止信号，并让监听循环观察到它。例如用 `ctrlc` 的回调设置标志，再让非阻塞监听器在 `WouldBlock` 时检查标志并短暂休眠。主线程正常退出循环后才能运行线程池的析构逻辑。仅把 `accept` 改为非阻塞不会改变 Ctrl-C 的默认处理。
 
 对静态文件服务器来说，硬退出通常可以接受：最坏情况是某个客户端收到半截响应，它会看到连接被重置并重试。真正需要优雅退出的场景是长连接与流式响应，那已经超出本章的范围。
 
@@ -682,7 +682,7 @@ Connection: close
 
 ### 案例 1：想从 &Request 里把 String 拿走——E0507
 
-```rust,noplayground
+```rust,editable
 struct Request {
     method: String,
     target: String,
@@ -740,7 +740,7 @@ fn main() {
 
 ### 案例 2：在 &self 的处理函数里往 Vec 里塞日志——E0596
 
-```rust,noplayground
+```rust,editable
 struct Server {
     log: Vec<String>,
 }
@@ -797,7 +797,7 @@ fn main() {
 
 ### 案例 3：让 Request 借用 parse 里的局部 String——E0515
 
-```rust,noplayground
+```rust,editable
 use std::io::{BufRead, BufReader};
 
 struct Request<'a> {
@@ -857,7 +857,7 @@ fn main() {
 
 ### 案例 4：线程池任务捕获了 Rc——E0277
 
-```rust,noplayground
+```rust,editable
 type Job = Box<dyn FnOnce() + Send + 'static>;
 
 fn execute(job: Job) {
@@ -910,7 +910,7 @@ fn main() {
 
 ### 案例 5：直接在 TcpStream 上按行读——E0599
 
-```rust,noplayground
+```rust,editable
 use std::io::BufRead;
 use std::net::TcpStream;
 
@@ -984,7 +984,7 @@ $ curl -o /dev/null -w '%{http_code}\n' http://127.0.0.1:7878/missing
 
 | 文件 | 内容 |
 | --- | --- |
-| `src/main.rs` | `Request`/`parse`/`ParseError`、路径安全、响应拼装、固定线程池与优雅退出、`main` |
+| `src/main.rs` | `Request`/`parse`/`ParseError`、路径安全、响应拼装、固定线程池、析构时排空队列、`main` |
 | `public/index.html` | 274 字节的演示页，`/` 与 `/index.html` 都指向它 |
 | `public/style.css` | 114 字节，用来验证 `Content-Type` 分支 |
 
@@ -1011,7 +1011,7 @@ $ curl -o /dev/null -w '%{http_code}\n' http://127.0.0.1:7878/missing
 - 响应体是 `Vec<u8>`，`Content-Length` 是字节数而非字符数，写体用 `write_all`，HEAD 只发头部但保留真实长度。
 - 固定大小线程池用 `mpsc` 加 `Arc<Mutex<Receiver>>`：锁只包住 `recv`，`Drop` 里先关发送端再 `join`，顺序反了就挂住。
 - 任务类型是 `Box<dyn FnOnce() + Send + 'static>`，跨线程共享用 `Arc` 而不是 `Rc`，这是案例 4 的约束。
-- Ctrl-C 不会触发 `Drop`，静态文件服务器的硬退出可以接受；要优雅退出必须自己接信号或改成非阻塞轮询 `accept`。
+- Ctrl-C 不会触发 `Drop`，静态文件服务器的硬退出可以接受；要优雅退出需要停止信号和能退出的监听循环。
 
 
 

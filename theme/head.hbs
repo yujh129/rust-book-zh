@@ -46,7 +46,9 @@
     'use strict';
     var LOCAL = 'http://127.0.0.1:3030';
     var REMOTE = 'https://play.rust-lang.org';
-    var EDITION = '2021';
+    if (['localhost', '127.0.0.1', '[::1]'].indexOf(location.hostname) < 0) { return; }
+    // 本地运行器第一次点 Run 要先编译依赖（几十秒），把 book.js 默认的 6 秒超时放宽。
+    window.RUSTBOOK_FETCH_TIMEOUT = 180000;
     var realFetch = window.fetch ? window.fetch.bind(window) : null;
     if (!realFetch) { return; }
 
@@ -58,15 +60,7 @@
             return realFetch(input, init);
         }
         var path = url.slice(REMOTE.length);
-        var localInit = init;
-        if (init && typeof init.body === 'string' && path === '/evaluate.json') {
-            try {
-                var body = JSON.parse(init.body);
-                body.edition = EDITION;
-                localInit = Object.assign({}, init, { body: JSON.stringify(body) });
-            } catch (e) { /* not our body, send it unchanged */ }
-        }
-        return realFetch(LOCAL + path, localInit).catch(function () {
+        return realFetch(LOCAL + path, init).catch(function () {
             return realFetch(input, init);
         });
     };
@@ -94,7 +88,8 @@
         .then(function (info) {
             if (info && info.ok) {
                 window.RUSTBOOK_PLAYGROUND_OK = true;
-                pill('本地运行器 已连接 · ' + info.crates.length + ' 个 crate', 'on', 4000);
+                var warming = info.warming ? '（正在预编译依赖）' : '';
+                pill('本地运行器 已连接 · ' + info.crates.length + ' 个 crate' + warming, 'on', 6000);
             }
         })
         .catch(function () {

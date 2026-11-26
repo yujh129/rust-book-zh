@@ -32,8 +32,12 @@ def check(path):
     is_project = rel.startswith('src/part7')
     is_appendix = rel.startswith('src/appendix')
     is_front = rel.startswith('src/00-')
+    for m in LINK.finditer(text):
+        dest = m.group(1).split('#')[0]
+        if '://' not in dest and not (path.parent / dest).is_file():
+            issues.append('broken link ' + m.group(1))
     if is_front:
-        return n, []
+        return n, issues
     low = 500 if is_project else (200 if is_appendix else 450)
     high = 1400 if is_project else (700 if is_appendix else 1200)
     if n < low or n > high:
@@ -63,16 +67,23 @@ def check(path):
                     texts += 1
         if texts < 3:
             issues.append('only ' + str(texts) + ' rustc error outputs')
-    for m in LINK.finditer(text):
-        target = (path.parent / m.group(1).split('#')[0]).resolve()
-        if not target.exists():
-            issues.append('broken link ' + m.group(1))
+    if not is_appendix:
+        section = re.search(r'^## (?:\d+\.\d+ )?典型错误案例[^\n]*\n(.*?)(?=^## |\Z)', text, re.M | re.S)
+        cases = re.split(r'^### ', section.group(1), flags=re.M)[1:] if section else []
+        if len(cases) != 5:
+            issues.append(f'expected five case headings, found {len(cases)}')
+        for case in cases:
+            if '**原因**' not in case or '**修复**' not in case:
+                issues.append('missing reason or fix in ' + case.splitlines()[0])
     return n, issues
 
 
 def main():
     files = chapter_files()
-    bad = 0
+    missing = set(SRC.rglob('*.md')) - set(files) - {SRC / 'SUMMARY.md'}
+    for path in sorted(missing):
+        print('not listed in SUMMARY.md: ' + str(path))
+    bad = len(missing)
     for f in files:
         if not f.exists():
             print('MISSING ' + str(f))

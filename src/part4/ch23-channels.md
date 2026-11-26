@@ -496,7 +496,7 @@ fn main() {
 
 ### 案例 1：send 之后继续使用被移动的值
 
-```rust,noplayground
+```rust,editable
 use std::sync::mpsc;
 use std::thread;
 
@@ -543,7 +543,7 @@ fn main() {
 
 ### 案例 2：发送的类型与通道的元素类型不一致
 
-```rust,noplayground
+```rust,editable
 use std::sync::mpsc;
 
 fn main() {
@@ -588,6 +588,7 @@ fn main() {
     let (tx, rx) = mpsc::channel::<Msg>();
     tx.send(Msg::Number(1)).unwrap();
     tx.send(Msg::Text(String::from("hi"))).unwrap();
+    drop(tx); // 最后一个发送端离开后，迭代器读完队列即可结束
     for m in rx {
         match m {
             Msg::Number(n) => println!("数字 {}", n),
@@ -599,7 +600,7 @@ fn main() {
 
 ### 案例 3：把 Vec 直接 println! 出来
 
-```rust,noplayground
+```rust,editable
 use std::sync::mpsc;
 
 fn main() {

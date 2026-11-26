@@ -1,14 +1,20 @@
 //! 存储层（第 42.3 节）：HashMap 加每次访问时的惰性过期。
 //!
 //! 过期时刻用 Instant（单调时钟）而不是 SystemTime：后者会被 NTP 校时、
-//! 时区调整、用户改钟影响，可能往回跳。代价是它不能序列化，所以不做持久化。
+//! 用户改钟影响，可能往回跳。代价是它不能序列化，所以不做持久化。
 
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 struct Entry {
     value: String,
-    expires_at: Option<Instant>,
+    expiry: Option<(Instant, Duration)>, // 设置时刻与有效时长
+}
+
+impl Entry {
+    fn remaining(&self, now: Instant) -> Option<Duration> {
+        self.expiry.map(|(start, ttl)| ttl.saturating_sub(now.saturating_duration_since(start)))
+    }
 }
 
 pub struct Store {
@@ -52,7 +58,7 @@ impl Store {
     /// 释放了，后面的 remove / get_mut 才不会和它打架。
     fn live(&mut self, key: &str) -> Option<&mut Entry> {
         let expired = match self.map.get(key) {
-            Some(e) => matches!(e.expires_at, Some(t) if t <= Instant::now()),
+            Some(e) => e.remaining(Instant::now()) == Some(Duration::ZERO),
             None => return None,
         };
         if expired {
@@ -63,18 +69,18 @@ impl Store {
     }
 
     pub fn set(&mut self, key: &str, value: &str, ttl: Option<Duration>) {
-        let expires_at = ttl.map(|d| Instant::now() + d);
+        let expiry = ttl.map(|duration| (Instant::now(), duration));
         match self.map.get_mut(key) {
             Some(e) => {
                 e.value = value.to_string();
-                e.expires_at = expires_at;
+                e.expiry = expiry;
             }
             None => {
                 self.map.insert(
                     key.to_string(),
                     Entry {
                         value: value.to_string(),
-                        expires_at,
+                        expiry,
                     },
                 );
             }
@@ -115,7 +121,7 @@ impl Store {
                     key.to_string(),
                     Entry {
                         value: next.to_string(),
-                        expires_at: None,
+                        expiry: None,
                     },
                 );
             }
@@ -127,10 +133,7 @@ impl Store {
     /// 否则用户会看到一个 GET 拿不到的键。
     pub fn keys(&mut self) -> Vec<String> {
         let now = Instant::now();
-        self.map.retain(|_, e| match e.expires_at {
-            Some(t) => t > now,
-            None => true,
-        });
+        self.map.retain(|_, e| e.remaining(now) != Some(Duration::ZERO));
         let mut keys: Vec<String> = self.map.keys().cloned().collect();
         keys.sort();
         keys
@@ -143,7 +146,7 @@ impl Store {
         }
         match self.map.get_mut(key) {
             Some(e) => {
-                e.expires_at = Some(Instant::now() + Duration::from_secs(secs));
+                e.expiry = Some((Instant::now(), Duration::from_secs(secs)));
                 true
             }
             None => false,
@@ -154,9 +157,9 @@ impl Store {
     pub fn ttl(&mut self, key: &str) -> i64 {
         match self.live(key) {
             None => -2,
-            Some(e) => match e.expires_at {
+            Some(e) => match e.remaining(Instant::now()) {
                 None => -1,
-                Some(t) => t.saturating_duration_since(Instant::now()).as_secs() as i64,
+                Some(left) => i64::try_from(left.as_secs()).unwrap_or(i64::MAX),
             },
         }
     }
@@ -182,7 +185,7 @@ mod tests {
     #[test]
     fn expired_key_disappears() {
         let mut store = Store::new();
-        // 0 秒过期：expires_at 落到现在，下一次访问就是过期的。
+        // 0 秒过期：下一次访问就不可见。
         store.set("tmp", "v", Some(Duration::from_secs(0)));
         assert_eq!(store.get("tmp"), None);
         assert!(!store.exists("tmp"));
@@ -208,6 +211,10 @@ mod tests {
         store.set("forever", "v", None);
         assert_eq!(store.ttl("forever"), -1);
         store.set("soon", "v", Some(Duration::from_secs(30)));
+        store.set("long", "v", Some(Duration::MAX));
+        assert_eq!(store.ttl("long"), i64::MAX);
+        assert!(store.expire("long", u64::MAX));
+        assert_eq!(store.get("long").as_deref(), Some("v"));
         let t = store.ttl("soon");
         assert!((0..=30).contains(&t), "TTL 应在 0..=30 之间，实际 {t}");
     }

@@ -145,7 +145,7 @@ fn main() {
 
 **`Display` 只写本层。** 它说的是"这个错误是什么"，不说底层为什么失败。`InvalidNumber` 只打印 "invalid number in `abc`"，`invalid digit found in string` 交给 `source`。如果本层把内层消息也拼进去，打印完整链时同一句话会出现两次。格式上全部小写、结尾不加句号、用反引号包住用户输入，原因在 27.5 展开。
 
-**`source` 返回借用而不是拥有。** 签名 `Option<&(dyn Error + 'static)>` 有两层含义：返回引用，所以遍历错误链不需要任何分配；`'static` 约束，所以被擦除的具体类型不能借用在栈上的临时数据。错误类型通常自己拥有字符串和数字，天然满足这个约束；如果错误里存的是 `&'a str`，它就没法做成 `Box<dyn Error>`。
+**`source` 返回借用而不是拥有。** 签名 `Option<&(dyn Error + 'static)>` 有两层含义：返回引用，所以遍历错误链不需要任何分配；`'static` 约束，所以被擦除的具体类型不能借用在栈上的临时数据。错误类型通常自己拥有字符串和数字，天然满足这个约束；如果错误里存的是 `&'a str`，它可以装进 `Box<dyn Error + 'a>`；省略对象生命周期且默认为 `'static` 的返回类型无法容纳这段短借用。
 
 **这里没有 `impl From<ParseIntError>`，是有意的。** `From` 的函数签名只能拿到 `ParseIntError`，拿不到 `input`；而 `InvalidNumber` 需要两者。硬写一个 `From` 只能把 `input` 填成空字符串，等于丢掉刚想保留的上下文。所以这里用 `map_err` 在调用点补上下文。什么样的错误适合 `From`，27.4 专门讨论。
 

@@ -517,7 +517,7 @@ fn main() {
 }
 ```
 
-程序会一直挂着，不报错也不退出。修法是给所有锁规定**统一的获取顺序**，任何线程都按同一个顺序加锁：
+这一版可能挂起，具体表现取决于两个线程取得锁的顺序。修法是给所有锁规定**统一的获取顺序**，任何线程都按同一个顺序加锁：
 
 ```rust
 use std::sync::{Arc, Mutex};
@@ -533,8 +533,10 @@ fn main() {
         let _y = b1.lock().unwrap();
     });
 
-    let _x = a.lock().unwrap();   // 两边都先 a 后 b
-    let _y = b.lock().unwrap();
+    {
+        let _x = a.lock().unwrap(); // 两边都先 a 后 b
+        let _y = b.lock().unwrap();
+    } // 等待子线程之前先释放它需要的两把锁
     t.join().unwrap();
     println!("done");
 }

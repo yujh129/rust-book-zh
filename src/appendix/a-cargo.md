@@ -107,7 +107,7 @@ codegen-units = 1
 几个字段值得单独解释：
 
 - **`edition`** 决定语言版本（2015/2018/2021/2024）。它不影响编译器版本，只影响语法与语义细节（比如 `async` 是不是关键字、数组的 `IntoIterator` 行为、闭包捕获规则）。不写 edition 时 Cargo 会警告并默认 2015——这是很多「教程里的代码在我这儿编译不过」的根源。
-- **`rust-version`** 声明最低支持的 Rust 版本（MSRV）。它不会阻止你在更新的编译器上构建，但依赖解析器会用它来挑选兼容的依赖版本。
+- **`rust-version`** 声明最低支持的 Rust 版本（MSRV）。它不会阻止你在更新的编译器上构建，解析依赖时是否优先选择兼容版本取决于 resolver 及其配置；MSRV 仍须在对应工具链上实测。
 - **`required-features`** 让某个 target 只在特定 feature 打开时才编译。常见用法是把命令行部分藏在 `cli` feature 后面，库用户不需要拖进 `clap`。
 - **`license`** 与 **`description`** 在 `cargo publish` 时是必需的；`license` 推荐用 SPDX 表达式（`MIT OR Apache-2.0` 是 Rust 生态的惯例双许可）。
 
@@ -164,7 +164,7 @@ winapi = "0.3"
 
 注意 `0.x` 的特殊规则：0.x 版本被视为「不稳定的主版本」，所以 `0.2` 只接受 0.2.*。这就是为什么 0.x 的 crate 升级经常是破坏性的。
 
-`Cargo.lock` 记录实际使用的精确版本。**应用要提交 lock，库不要提交**——应用需要可复现的构建，库需要让下游能自由选择版本。
+`Cargo.lock` 记录实际使用的精确版本。应用和库都可以提交锁文件，以复现本仓库的构建与测试。库被用作依赖时，下游根工程使用自己的锁文件解析依赖。
 
 ## A.4 features：编译期开关
 
@@ -447,7 +447,7 @@ cargo publish               # 真正上传
 
 发布前必须满足的硬条件：`license` 或 `license-file`、`description`、唯一的包名、版本号未发布过。**版本号一旦发布就不能删除**（只能用 `cargo yank` 标记为不可用，已下载的项目仍能构建）。
 
-`cargo publish --dry-run` 最常见的失败原因是**漏文件**：Cargo 只打包被 git 追踪的文件（有 `.gitignore` 时），所以忘记 `git add` 的新文件不会进包。用 `cargo package --list` 核对，或者用 `include`/`exclude` 字段显式控制。
+`cargo publish --dry-run` 最常见的失败原因是**漏文件**：默认打包规则参考 Git 的忽略规则，未跟踪和被忽略是两种情况；未提交的改动还可能触发脏工作区检查。用 `cargo package --list` 核对，或者用 `include`/`exclude` 字段显式控制。
 
 ## A.11 常见报错与修复
 
@@ -537,7 +537,7 @@ warning: Cargo.toml: `package.edition` is unspecified, defaulting to `2015` whil
 
 - 日常内环用 `cargo check`，它比 `cargo build` 快好几倍；只在要运行或要产物时才 build。
 - Cargo.toml 的未知键只是警告，**不会阻止构建**，所以拼错的配置会静默失效——见到清单警告必须修。
-- 版本号是范围不是精确值；`0.x` 有特殊规则；`Cargo.lock` 应用提交、库不提交。
+- 版本号是范围不是精确值；`0.x` 有特殊规则；`Cargo.lock` 可复现当前工程的依赖解析，库自己的锁文件不会约束下游。
 - feature 必须是可加的，因为 Cargo 会对所有使用者取并集；重型可选依赖默认关闭。
 - `[profile.dev.package."*"]` 优化依赖、不优化自己的代码，是开发期性价比最高的一个配置。
 - 多 crate 项目用 workspace 共享锁文件与 target；`cargo tree -d` 是排查 trait 不匹配的第一把工具。

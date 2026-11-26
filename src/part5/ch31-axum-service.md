@@ -93,7 +93,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ```
 
-`axum` 默认不带 tokio 运行时，`#[tokio::main]` 来自 tokio 的 `macros` 与 `rt-multi-thread`，所以用 `full` 最省事。
+axum 的默认 feature 支持 Tokio，但应用要直接使用 `tokio::net` 和 `#[tokio::main]`，仍应把 Tokio 写进自己的依赖。这里的 `full` 包含 `macros`、`rt-multi-thread` 和网络等 feature。
 
 ```rust,noplayground
 use axum::{

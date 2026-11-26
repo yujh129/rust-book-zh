@@ -115,9 +115,12 @@ struct Game {
 // ---------------------------------------------------------------------------
 
 impl Game {
+    fn valid_size(w: i32, h: i32) -> bool {
+        w >= 4 && h >= 1 && w.checked_mul(h).is_some_and(|cells| cells <= 65_536)
+    }
+
     fn new(w: i32, h: i32, seed: u64) -> Self {
-        // 初始蛇占 3 格，食物还要再占 1 格：棋盘至少 4 格才构造得出合法局面。
-        debug_assert!(w * h >= 4, "棋盘至少要有 4 格");
+        assert!(Self::valid_size(w, h), "棋盘尺寸超出范围");
         let mut snake = VecDeque::new();
         let cy = h / 2;
         let cx = w / 2;
@@ -261,10 +264,19 @@ fn describe(status: Status) -> String {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let w = args.first().and_then(|a| a.parse().ok()).unwrap_or(12);
-    let h = args.get(1).and_then(|a| a.parse().ok()).unwrap_or(8);
-    let seed = args.get(2).and_then(|a| a.parse().ok()).unwrap_or(7);
     let frames = args.iter().any(|a| a == "--frames");
+    let mut values = args.iter().map(String::as_str).filter(|a| *a != "--frames");
+    let w = values.next().unwrap_or("12").parse::<i32>();
+    let h = values.next().unwrap_or("8").parse::<i32>();
+    let seed = values.next().unwrap_or("7").parse::<u64>();
+    let (Ok(w), Ok(h), Ok(seed)) = (w, h, seed) else {
+        eprintln!("用法：snake [宽 高 种子] [--frames]，参数必须是整数");
+        std::process::exit(2);
+    };
+    if values.next().is_some() || !Game::valid_size(w, h) {
+        eprintln!("宽至少 4，高至少 1，总格数最多 65536；最多接受三个位置参数");
+        std::process::exit(2);
+    }
 
     let mut input = String::new();
     io::stdin()
@@ -301,6 +313,9 @@ fn main() {
         moves += 1;
         if frames {
             print!("{}", game.render());
+        }
+        if game.status == Status::Won {
+            break;
         }
     }
     println!(
@@ -376,14 +391,13 @@ mod tests {
     #[test]
     fn tail_cell_is_legal_to_enter() {
         let mut g = Game::new(8, 8, 3);
+        g.snake = VecDeque::from([point(4, 4), point(4, 5), point(5, 5), point(5, 4)]);
+        g.dir = Direction::Up;
         g.food = point(7, 7);
-        assert!(g.step());
-        assert!(g.turn(Direction::Up));
-        assert!(g.step());
-        assert!(g.turn(Direction::Left));
-        assert!(g.step());
-        assert!(g.turn(Direction::Down));
-        assert!(g.step(), "回到尾巴刚离开的格子是合法的");
+        let old_tail = *g.snake.back().unwrap();
+        assert!(g.turn(Direction::Right));
+        assert!(g.step(), "可以进入本步将移走的尾格");
+        assert_eq!(g.head(), old_tail);
         assert_eq!(g.status, Status::Running);
     }
 

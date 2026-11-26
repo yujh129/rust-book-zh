@@ -5,6 +5,9 @@ description = "面向中文读者的 Rust 系统教程：从变量、所有权�
 language = "zh-CN"
 src = "src"
 
+[rust]
+edition = "2021"
+
 [build]
 build-dir = "book"
 create-missing = false

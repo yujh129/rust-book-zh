@@ -21,7 +21,7 @@ Rust 的官方文档、错误信息、crate 文档几乎全是英文，而中文
 | 所有权 | ownership | 每个值有且只有一个所有者，所有者离开作用域时值被销毁 | 5 |
 | 移动 | move | 把值的所有权转给另一个绑定，原绑定失效 | 5 |
 | 复制 | copy | 按位复制，原绑定仍可用，仅限实现了 Copy 的类型 | 5 |
-| 克隆 | clone | 显式深拷贝，可能分配内存，可能很贵 | 5 |
+| 克隆 | clone | 显式创建另一个值；`String::clone` 复制内容，`Rc::clone` 共享内容 | 5 |
 | 部分移动 | partial move | 从结构体里移走一个字段，剩余字段仍可单独使用，整体不可再用 | 5 |
 | 借用 | borrow | 不取得所有权地访问一个值，通过引用实现 | 6 |
 | 共享引用 | shared reference | `&T`，只读，可以同时存在多个 | 6 |
@@ -38,7 +38,7 @@ Rust 的官方文档、错误信息、crate 文档几乎全是英文，而中文
 | 胖指针 | fat pointer | 带额外元数据的指针（切片带长度，trait 对象带 vtable），16 字节 | 20 |
 | 解引用强制转换 | deref coercion | `&String` 自动当 `&str` 用，由 Deref 驱动 | 18 |
 | 内部可变性 | interior mutability | 通过共享引用修改内容，Cell/RefCell/Mutex | 19 |
-| 临时值 | temporary value | 表达式产生的匿名值，语句结束时销毁 | 6 |
+| 临时值 | temporary value | 表达式产生的匿名值，由临时值作用域决定何时销毁；某些 `let` 借用会延长它的生命期 | 6 |
 | 临时值生命周期延长 | temporary lifetime extension | `let x = &temp();` 让临时值活到 x 的作用域结束 | 6 |
 | 重借用 | reborrow | `&mut *r` 把可变引用借出去一段更短的时间 | 6 |
 | 别名 XOR 可变性 | aliasing XOR mutability | Rust 的核心不变式：要么多个只读，要么一个可写 | 6 |
@@ -57,7 +57,7 @@ Rust 的官方文档、错误信息、crate 文档几乎全是英文，而中文
 | trait 约束 | trait bound | `T: Clone`，限制类型参数必须实现什么 | 14 |
 | where 子句 | where clause | 复杂约束的书写形式 | 14 |
 | trait 对象 | trait object | `dyn Trait`，运行期通过 vtable 分派 | 16 |
-| 对象安全 | object safety | 一个 trait 能否用作 dyn，方法不能返回 Self、不能有泛型参数 | 16 |
+| 对象安全 | object safety | trait 能否构成 `dyn Trait`；限制适用于可动态分派的方法，`where Self: Sized` 的方法可排除在外 | 16 |
 | 虚函数表 | vtable | trait 对象携带的函数指针表 | 16, 20 |
 | 静态分派 | static dispatch | 编译期确定调用哪个实现，可内联 | 16 |
 | 动态分派 | dynamic dispatch | 运行期查 vtable，有一次间接跳转 | 16 |
@@ -71,7 +71,7 @@ Rust 的官方文档、错误信息、crate 文档几乎全是英文，而中文
 | 自动 trait | auto trait | 由编译器按字段自动推导的 trait，如 Send/Sync | 21 |
 | 否定实现 | negative impl | `impl !Send for T`，显式声明不实现（不稳定，仅标准库可用） | 21 |
 | 固有方法 | inherent method | 直接写在 impl Type 里的方法，不需要 trait | 8 |
-| 关联函数 | associated function | 不带 self 的 impl 内函数，如 `String::new()` | 8 |
+| 关联函数 | associated function | 与类型或 trait 关联的函数；带 self 接收者的是方法，`String::new()` 无接收者 | 8 |
 | 方法接收者 | receiver | self / &self / &mut self / self: `Box<Self>` 等 | 8 |
 | 类型推断 | type inference | 编译器根据上下文推断类型，推断不出时要求标注 | 2 |
 | 类型标注 | type annotation | `let x: i32`，帮助推断或明确意图 | 2 |
@@ -111,11 +111,11 @@ Rust 的官方文档、错误信息、crate 文档几乎全是英文，而中文
 | 内存序 | memory ordering | Relaxed/Acquire/Release/AcqRel/SeqCst，规定可见性 | 22 |
 | 松散序 | Relaxed | 只保证原子性，不建立同步关系 | 22 |
 | 获取-释放 | Acquire / Release | 建立 happens-before 关系的一对 | 22 |
-| 顺序一致 | SeqCst | 最强也最慢，全局单一顺序 | 22 |
+| 顺序一致 | SeqCst | 所有 SeqCst 操作共享一致的全序，开销取决于目标和操作 | 22 |
 | 内存屏障 | memory fence | 控制重排序的底层原语 | 22 |
 | 通道 | channel | 线程间发消息，mpsc 多生产者单消费者 | 23 |
 | 发送端 | sender (tx) | 发送端，clone 出多个生产者 | 23 |
-| 接收端 | receiver (rx) | 接收端，只能有一个 | 23 |
+| 接收端 | receiver (rx) | 接收消息的一端；标准库 `mpsc` 只有一个，广播通道可有多个 | 23 |
 | 有界通道 | sync_channel / bounded | 容量满时发送方阻塞，提供背压 | 23 |
 | 汇合通道 | rendezvous channel | 容量 0，发送与接收必须同时就绪 | 23 |
 | 背压 | backpressure | 消费者慢时反推生产者，防止内存无限增长 | 23 |
@@ -126,11 +126,11 @@ Rust 的官方文档、错误信息、crate 文档几乎全是英文，而中文
 | 异步 | async / await | 不阻塞线程的并发，编译成状态机 | 24 |
 | 未来 | Future | 表示尚未完成的计算，poll 驱动 | 24 |
 | 轮询 | poll | 运行时询问 Future 是否就绪 | 24 |
-| 唤醒器 | Waker | Future 就绪后通知运行时的机制 | 24 |
+| 唤醒器 | Waker | 通知执行器任务可能继续推进，可以再次 poll | 24 |
 | 执行器 | executor | 调度并 poll 多个 Future 的组件 | 24 |
 | 运行时 | runtime | 执行器 + 反应器 + 定时器，如 Tokio | 25 |
 | 任务 | task | 运行时调度的单位，tokio::spawn 启动 | 25 |
-| 取消 | cancellation | drop 一个 Future 即取消，取消点只在 await | 25 |
+| 取消 | cancellation | 丢弃 future 会停止轮询它，已发生的外部操作可能继续；丢弃 Tokio 的 JoinHandle 会分离任务 | 25 |
 | 取消安全 | cancellation safety | 被取消后不留半完成状态 | 25 |
 | 阻塞操作 | blocking operation | 会卡住线程的操作，异步里要 spawn_blocking | 25 |
 | 工作窃取 | work stealing | 空闲线程从其他队列偷任务 | 25 |

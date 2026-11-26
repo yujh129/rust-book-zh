@@ -106,8 +106,9 @@ error[EXXXX]: ...        // 贴真实报错，允许省略与本题无关的行
 自检（写完一章就跑）：
 
 ```bash
-python tools/verify_blocks.py src --only <章名>   # rustc 逐块类型检查普通 rust 块
+python tools/verify_blocks.py src --only <章名>   # 用 rustc 逐块编译普通 rust 块
 python tools/verify_cases.py --only <章名>        # 把 editable 块送本地运行器，核对紧随其后的报错
+python tools/verify_cases.py --local --only <章名> # 不启动运行器，直接用 Cargo 工程编译
 ```
 
 ## 6. 典型错误案例的写法

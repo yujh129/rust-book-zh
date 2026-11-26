@@ -200,7 +200,8 @@ async fn handle_conn(
         return;
     }
 
-    let write_task = tokio::spawn(async move {
+    let mut writers = JoinSet::new();
+    writers.spawn(async move {
         while let Some(line) = out_rx.recv().await {
             if writer.write_all(line.as_bytes()).await.is_err() {
                 break;
@@ -248,7 +249,7 @@ async fn handle_conn(
 
     // 三条退出路径（/quit、EOF、关闭信号）共用同一个出口。
     let _ = cmd_tx.send(Cmd::Leave { id }).await;
-    let _ = write_task.await;
+    let _ = writers.join_next().await;
 }
 
 /// accept 循环（43.6）。
@@ -260,9 +261,9 @@ pub async fn run(listener: TcpListener, mut shutdown: watch::Receiver<bool>) -> 
     let mut conns = JoinSet::new();
     let mut next_id: u64 = 0;
 
-    loop {
+    let result = loop {
         tokio::select! {
-            _ = shutdown.changed() => break,
+            _ = shutdown.changed() => break Ok(()),
             accepted = listener.accept() => {
                 match accepted {
                     Ok((stream, _peer)) => {
@@ -270,17 +271,17 @@ pub async fn run(listener: TcpListener, mut shutdown: watch::Receiver<bool>) -> 
                         next_id += 1;
                         conns.spawn(handle_conn(id, stream, cmd_tx.clone(), shutdown.clone()));
                     }
-                    Err(_) => break,
+                    Err(err) => break Err(err),
                 }
             }
             Some(_) = conns.join_next() => {}
         }
-    }
+    };
 
     drop(cmd_tx);
-    let _ = hub.await;
     conns.shutdown().await;
-    Ok(())
+    let _ = hub.await;
+    result
 }
 
 /// 进程入口用的一层包装：章节 43.6 的 main 调用了 chat_server::serve，

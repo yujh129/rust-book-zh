@@ -30,9 +30,9 @@ pub fn execute(store: &mut Store, args: &[String]) -> Reply {
     let cmd = args[0].to_uppercase();
     let rest = &args[1..];
     match cmd.as_str() {
-        "PING" => Reply::Simple(String::from("PONG")),
-        "SET" if rest.len() >= 2 => {
-            if rest.len() >= 4 && rest[2].eq_ignore_ascii_case("EX") {
+        "PING" if rest.is_empty() => Reply::Simple(String::from("PONG")),
+        "SET" if rest.len() == 2 || (rest.len() == 4 && rest[2].eq_ignore_ascii_case("EX")) => {
+            if rest.len() == 4 {
                 match rest[3].parse::<u64>() {
                     Ok(secs) => store.set(&rest[0], &rest[1], Some(Duration::from_secs(secs))),
                     // EX 后面不是数字是命令错误：悄悄当成「不过期」会让客户端以为 TTL 生效了。
@@ -43,12 +43,11 @@ pub fn execute(store: &mut Store, args: &[String]) -> Reply {
             }
             Reply::Simple(String::from("OK"))
         }
-        "SET" => Reply::Error(String::from("SET 需要 key 和 value")),
+        "SET" => Reply::Error(String::from("用法：SET key value [EX 秒数]")),
         "GET" if rest.len() == 1 => Reply::Bulk(store.get(&rest[0])),
         "GET" => Reply::Error(String::from("GET 需要恰好一个 key")),
         "DEL" if rest.len() == 1 => Reply::Integer(store.del(&rest[0]) as i64),
         "DEL" => Reply::Error(String::from("DEL 需要恰好一个 key")),
-        // 42.1 的验收表要求 EXISTS，42.6 的分发片段漏了它，这里按表补上。
         "EXISTS" if rest.len() == 1 => Reply::Integer(store.exists(&rest[0]) as i64),
         "EXISTS" => Reply::Error(String::from("EXISTS 需要恰好一个 key")),
         "INCR" if rest.len() == 1 => match store.incr(&rest[0]) {
@@ -56,7 +55,7 @@ pub fn execute(store: &mut Store, args: &[String]) -> Reply {
             Err(e) => Reply::Error(e.to_string()),
         },
         "INCR" => Reply::Error(String::from("INCR 需要恰好一个 key")),
-        "KEYS" => Reply::Bulk(Some(store.keys().join(" "))),
+        "KEYS" if rest.is_empty() => Reply::Bulk(Some(store.keys().join(" "))),
         "EXPIRE" if rest.len() == 2 => match rest[1].parse::<u64>() {
             Ok(secs) => Reply::Integer(store.expire(&rest[0], secs) as i64),
             Err(_) => Reply::Error(String::from("EXPIRE 的秒数非法")),
@@ -64,12 +63,13 @@ pub fn execute(store: &mut Store, args: &[String]) -> Reply {
         "EXPIRE" => Reply::Error(String::from("EXPIRE 需要 key 和秒数")),
         "TTL" if rest.len() == 1 => Reply::Integer(store.ttl(&rest[0])),
         "TTL" => Reply::Error(String::from("TTL 需要恰好一个 key")),
-        "FLUSHALL" => {
+        "FLUSHALL" if rest.is_empty() => {
             // 整体替换比 map.clear() 更直白，以后 Store 加字段也不会漏掉。
             *store = Store::new();
             Reply::Simple(String::from("OK"))
         }
-        "QUIT" => Reply::Simple(String::from("OK")),
+        "QUIT" if rest.is_empty() => Reply::Simple(String::from("OK")),
+        "PING" | "KEYS" | "FLUSHALL" | "QUIT" => Reply::Error(String::from("命令不接受参数")),
         _ => Reply::Error(format!("未知命令 {}", args[0])),
     }
 }
@@ -87,16 +87,17 @@ pub fn handle_connection(mut stream: TcpStream, store: Arc<Mutex<Store>>) {
             Ok(n) => n,
             Err(_) => return,
         };
+        if buf.len() + n > 64 * 1024 * 1024 {
+            let _ = stream.write_all(&Reply::Error(String::from("请求过大")).to_bytes());
+            return;
+        }
         buf.extend_from_slice(&chunk[..n]);
         loop {
             match parse_command(&buf) {
                 Ok(Some((args, used))) => {
                     buf.drain(..used);
-                    // 书上写 args[0]：但 *0 这种合法输入会解析出空参数列表，
-                    // 于是这里先 panic，执行不到 execute 的空值检查。改用 first。
-                    let quit = args
-                        .first()
-                        .is_some_and(|a| a.eq_ignore_ascii_case("QUIT"));
+                    // 只有不带参数的 QUIT 才结束连接。
+                    let quit = args.len() == 1 && args[0].eq_ignore_ascii_case("QUIT");
                     // 锁的作用域被一对花括号钉死在 execute 上，网络写操作在锁外。
                     let reply = {
                         let mut guard = store.lock().unwrap();

@@ -530,7 +530,7 @@ help: consider introducing a named lifetime parameter
 ```
 
 **原因**：结构体存引用时，必须说明"这个引用和哪个东西活得一样久"。
-**修复**：`struct Parser<'a> { input: &'a str }`，使用时 `Parser { input: "abc" }`。如果觉得生命周期标注太吵，考虑存 `String`（拥有所有权）——第 15、16 章会讨论这个取舍。
+**修复**：`struct Parser<'a> { input: &'a str }`，使用时 `Parser { input: "abc" }`。如果觉得生命周期标注太吵，考虑存 `String`（拥有所有权）——第 17 章会讨论这个取舍。
 
 ## 动手练习
 
@@ -554,7 +554,7 @@ help: consider introducing a named lifetime parameter
 - 借用让函数在不转移所有权的前提下访问数据；默认用 `&`，需要消费才传值。
 - 规则：任意多个 `&T` 或唯一一个 `&mut T`，二者不可兼得；它排除了悬垂引用与数据竞争。
 - NLL 把借用的结束点定在最后一次使用，报错里的三行标注（occur / mutable occur / later used）是排错地图。
-- 借用检查是纯编译期的，`&T` 在运行期就是一个指针，零开销。
+- 借用检查是纯编译期的，对 `T: Sized`，`&T` 与地址同宽；切片或 trait 对象的引用还携带元数据，借用检查本身没有运行时计数。
 - 悬垂引用在函数签名层面就被 `E0106`/`E0515` 挡住。
 - 重借用（`&*x` / `&mut *x`）与切片（`&[T]`、`split_at_mut`）是化解借用冲突的标准工具。
 - API 设计：参数收 `&str`、`&[T]` 而不是 `&String`、`&Vec<T>`。

@@ -152,8 +152,9 @@ use std::ptr;
 /// - `offset` 不能超过 `isize::MAX`。
 unsafe fn read_u32_at(base: *const u8, offset: usize) -> u32 {
     debug_assert!(!base.is_null(), "base 不能为空");
-    let p = base.add(offset) as *const u32;
-    unsafe { ptr::read_unaligned(p) }
+    // SAFETY：调用方保证偏移和四个已初始化字节均位于同一分配内。
+    let p = unsafe { base.add(offset) }.cast::<u32>();
+    u32::from_le(unsafe { ptr::read_unaligned(p) })
 }
 
 fn main() {
@@ -251,6 +252,8 @@ fn main() {
 
 ## 35.5 extern "C"：把边界画出来
 
+本书按 2021 edition 编译。若把下面的示例移到 2024 edition，导入声明块要写 `unsafe extern "C" { ... }`，导出符号的属性要写 `#[unsafe(no_mangle)]`。前者要求声明者核对外部函数签名，后者要求导出者确保符号名不会冲突。这两种新写法从 Rust 1.82 起也适用于 2021 edition。
+
 FFI 有两个方向：把 Rust 函数导出给别的语言调用，和把别的语言的函数导入给 Rust 调用。两个方向都靠 `extern "C"` 描述 ABI（Application Binary Interface，应用二进制接口）。
 
 ### 导出：让 C 调用 Rust
@@ -283,7 +286,7 @@ int32_t add(int32_t a, int32_t b);
 crate-type = ["cdylib"]
 ```
 
-然后 `cargo build --release` 会在 `target/release/` 下产出 `.dll`（Windows）、`.so`（Linux）或 `.dylib`（macOS），C 程序链接它即可。`cdylib` 只导出显式标了 `#[no_mangle]` 的函数，其余 Rust 符号不会污染动态符号表。
+然后 `cargo build --release` 会在 `target/release/` 下产出 `.dll`（Windows）、`.so`（Linux）或 `.dylib`（macOS），C 程序链接它即可。这里用 `no_mangle` 公开名为 `add` 的符号，也可以用 `export_name` 指定导出名。
 
 ### 导入：让 Rust 调用 C
 
@@ -844,7 +847,7 @@ fn main() {
 ## 小结
 
 - unsafe 只打开五个能力：解引用裸指针、调用 unsafe 函数、访问修改 `static mut`、实现 unsafe trait、访问 union 字段，别的检查照旧
-- 借用检查、类型检查、初始化与移动检查在 unsafe 块里完全生效；unsafe 覆盖不到的地方报错，说明那段代码不需要 unsafe
+- 借用检查、类型检查、初始化与移动检查在 unsafe 块里完全生效；遇到类型或借用错误仍需修正代码
 - 创建裸指针是安全的，解引用、指针算术、转成引用才是 unsafe；`add` 以元素为单位，跨分配对象的算术本身就违规
 - unsafe fn 的 `# Safety` 文档是签名的一部分；每个 unsafe 块上方都要有一行 SAFETY 注释，写清不变量、谁保证、违反后果
 - `debug_assert!` 只在 debug 构建检查程序员错误，来自外部的输入要用 `assert!` 或返回 `Result`

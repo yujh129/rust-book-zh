@@ -51,7 +51,7 @@
 | 越界判定 | `step` 开头的边界检查 |
 | 自撞判定 | `step` 里对 `snake[..len-1]` 的查找 |
 | 长度变化 | `push_front` 之后是否 `pop_back` |
-| 食物放置 | `place_food`（在空格里均匀抽样） |
+| 食物放置 | `place_food`（从空格里选一个） |
 | 结束状态 | `Status` 枚举，`step` 返回 `bool` |
 
 ## 44.3 数据模型：三个小类型撑起整个游戏
@@ -165,7 +165,7 @@ fn main() {
 }
 ```
 
-`seed | 1` 保证种子非零（全零的 LCG 会永远输出 0）；`>> 33` 把 64 位结果的最高 31 位挪到低端，再 `as u32` 截断，取的是高位而不是低位——LCG 的低位周期很短，直接取低位会出现明显的规律。**真正的密码学随机数不能用 LCG**，但游戏里决定食物位置完全够用。
+`seed | 1` 把种子映射为奇数，相邻的一偶一奇可能产生相同序列。这里的递推式有非零加数，从零开始也能前进；`>> 33` 把 64 位结果的最高 31 位挪到低端，再 `as u32` 截断，取的是高位而不是低位——LCG 的低位周期很短，直接取低位会出现明显的规律。**真正的密码学随机数不能用 LCG**，但游戏里决定食物位置完全够用。
 
 ## 44.4 核心循环：一个结构体加四个方法
 
@@ -193,15 +193,18 @@ struct Game {
 }
 ```
 
-`Status` 用 `Crashed(&'static str)` 而不是 `Crashed(String)`：结束原因只有固定的几个字符串字面量，用 `&'static str` 不分配堆内存，还天然实现了 `Copy`——测试里 `assert_eq!(g.status, Status::Crashed("咬到自己"))` 才能直接比较。
+`Status` 用 `Crashed(&'static str)` 而不是 `Crashed(String)`：结束原因只有固定的几个字符串字面量，用 `&'static str` 不分配堆内存，还能派生 `Copy`；测试里的 `assert_eq!` 则依赖 `PartialEq` 和用于失败输出的 `Debug`。
 
 ### 构造：让不可能的状态无法构造
 
 ```rust,noplayground
 impl Game {
+    fn valid_size(w: i32, h: i32) -> bool {
+        w >= 4 && h >= 1 && w.checked_mul(h).is_some_and(|cells| cells <= 65_536)
+    }
+
     fn new(w: i32, h: i32, seed: u64) -> Self {
-        // 初始蛇占 3 格，食物还要再占 1 格：棋盘至少 4 格才构造得出合法局面。
-        debug_assert!(w * h >= 4, "棋盘至少要有 4 格");
+        assert!(Self::valid_size(w, h), "棋盘尺寸超出范围");
         let mut snake = VecDeque::new();
         let cy = h / 2;
         let cx = w / 2;
@@ -228,15 +231,15 @@ impl Game {
 }
 ```
 
-注意四个细节：
+注意五个细节：
 
 1. **字段声明用了简写** `w,` 等价于 `w: w`。Rust 的这个语法在构造结构体时用得很频繁。
 2. **`food` 先填 `(0, 0)` 再调 `place_food`**。因为「食物不能在蛇身上」这个不变式需要蛇已经存在，而构造结构体时无法先调方法再赋值字段（除非用 `Option` 或两段式构造）。先放一个占位值、构造完立刻修正，是这个模式的常用解法。
 3. **`head()` 返回 `Point` 而不是 `&Point`**：`Point` 是 `Copy`，返回值省去一次借用，调用方也不需要关心 `snake` 的借用期。
 4. **`expect` 在这里是安全的**：不变式是「蛇至少有 3 节」，只有测试里手工清空 `snake` 才会破坏它——那种情况本就该 panic。
-5. **`new` 会检查棋盘尺寸**：初始蛇占 3 格、食物还要占 1 格，`w * h < 4`（比如 1×1）时开局就已经是死局。`debug_assert!` 在 debug 构建里立即 panic，在 release 里被编译掉，不留运行时开销。
+5. **棋盘宽至少为 4。** 初始蛇尾的横坐标是 `w / 2 - 2`。高度至少为 1，命令行会在分配前检查总格数不超过 65,536；`checked_mul` 同时处理尺寸乘法溢出。
 
-### 放食物：在空格里均匀抽样
+### 放食物：从空格里选一个
 
 ```rust,noplayground
 impl Game {
@@ -260,7 +263,7 @@ impl Game {
 }
 ```
 
-「先收集所有空格，再从中随机取一个」看起来笨，但它保证了**食物分布均匀**。常见的错误写法是「随机取坐标，若在蛇身上就重试」：当蛇很长时，重试次数会爆炸（棋盘快满时可能连续几百次都撞上蛇身），而且分布也不再均匀。用 `O(w×h)` 的一次扫描换来正确性和稳定性，在 12×8 的棋盘上完全不值得优化。
+先收集空格能保证棋盘接近填满时也会在一轮扫描内结束。`snake.contains` 每次最多检查整条蛇，设蛇长为 L，最坏时间是 O(w × h × L)。取余选下标可能有轻微偏差。另一种做法是均匀抽坐标、遇到蛇身就重试：空格的条件分布仍均匀，但空格越少，等待越久。
 
 ### 转向：拒绝 180 度掉头
 
@@ -383,10 +386,19 @@ fn describe(status: Status) -> String {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let w = args.first().and_then(|a| a.parse().ok()).unwrap_or(12);
-    let h = args.get(1).and_then(|a| a.parse().ok()).unwrap_or(8);
-    let seed = args.get(2).and_then(|a| a.parse().ok()).unwrap_or(7);
     let frames = args.iter().any(|a| a == "--frames");
+    let mut values = args.iter().map(String::as_str).filter(|a| *a != "--frames");
+    let w = values.next().unwrap_or("12").parse::<i32>();
+    let h = values.next().unwrap_or("8").parse::<i32>();
+    let seed = values.next().unwrap_or("7").parse::<u64>();
+    let (Ok(w), Ok(h), Ok(seed)) = (w, h, seed) else {
+        eprintln!("用法：snake [宽 高 种子] [--frames]，参数必须是整数");
+        std::process::exit(2);
+    };
+    if values.next().is_some() || !Game::valid_size(w, h) {
+        eprintln!("宽至少 4，高至少 1，总格数最多 65536；最多接受三个位置参数");
+        std::process::exit(2);
+    }
 
     let mut input = String::new();
     io::stdin().read_to_string(&mut input).expect("读标准输入失败");
@@ -418,6 +430,9 @@ fn main() {
         moves += 1;
         if frames {
             print!("{}", game.render());
+        }
+        if game.status == Status::Won {
+            break;
         }
     }
     println!("得分 {}，长度 {}，状态 {}", game.score, game.snake.len(), describe(game.status));
@@ -533,14 +548,13 @@ mod tests {
     #[test]
     fn tail_cell_is_legal_to_enter() {
         let mut g = Game::new(8, 8, 3);
+        g.snake = VecDeque::from([point(4, 4), point(4, 5), point(5, 5), point(5, 4)]);
+        g.dir = Direction::Up;
         g.food = point(7, 7);
-        assert!(g.step());
-        assert!(g.turn(Direction::Up));
-        assert!(g.step());
-        assert!(g.turn(Direction::Left));
-        assert!(g.step());
-        assert!(g.turn(Direction::Down));
-        assert!(g.step(), "回到尾巴刚离开的格子是合法的");
+        let old_tail = *g.snake.back().unwrap();
+        assert!(g.turn(Direction::Right));
+        assert!(g.step(), "可以进入本步将移走的尾格");
+        assert_eq!(g.head(), old_tail);
         assert_eq!(g.status, Status::Running);
     }
 
@@ -621,7 +635,7 @@ mod tests {
 
 两个测试值得单独说明：
 
-- `tail_cell_is_legal_to_enter` 走了一个 4 步的方框：右、上、左、下。第 4 步蛇头要进入的格子，正是第 1 步尾巴离开的位置。如果 `step` 里的检查没有排除尾巴，这个测试会失败——它保护的就是 44.2 节里那条「容易漏掉的细节」。
+- `tail_cell_is_legal_to_enter` 用四个格子摆出方形蛇身，向右一步恰好进入移动前的尾格。把 `take(len - 1)` 改成检查整条蛇，该断言就会失败。
 - `full_board_wins` 用 4×1 的棋盘：初始蛇占 3 格、食物在唯一的空格上，走一步就吃满 → `Won`。用最小棋盘构造边界条件，比在 12×8 里手动喂 93 个食物现实得多。
 
 实测结果：
@@ -713,7 +727,7 @@ fn render_into(&self, buf: &mut String) {
 
 ### 案例 1：一边遍历蛇身一边修改——E0502
 
-```rust,noplayground
+```rust,editable
 use std::collections::VecDeque;
 
 struct Game {
@@ -792,7 +806,7 @@ fn main() {
 
 ### 案例 2：漏写一个方向分支——E0004
 
-```rust,noplayground
+```rust,editable
 enum Direction {
     Up,
     Down,
@@ -842,7 +856,7 @@ help: ensure that all possible cases are being handled by adding a match arm wit
 
 ### 案例 3：调用了不存在的方法——E0599
 
-```rust,noplayground
+```rust,editable
 struct Game {
     score: u32,
 }
@@ -887,7 +901,7 @@ fn main() {
 
 ### 案例 4：把字符当方向传——E0308
 
-```rust,noplayground
+```rust,editable
 enum Direction {
     Up,
     Down,
@@ -956,7 +970,7 @@ fn main() {
 
 ### 案例 5：移动后继续使用——E0382
 
-```rust,noplayground
+```rust,editable
 #[derive(Debug)]
 struct Game {
     score: u32,

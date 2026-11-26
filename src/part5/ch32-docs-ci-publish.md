@@ -590,7 +590,7 @@ src/lib.rs
 
 ### 第三步：干跑
 
-`cargo publish --dry-run` 会完整走一遍打包和编译验证，只是最后不上传。它是发布前唯一能验证"这个 `.crate` 真能编译"的手段——注意它验证的是**打包后的内容**，不是你的工作目录，少一个文件在这里就会暴露。
+`cargo publish --dry-run` 会完整走一遍打包和编译验证，只是最后不上传。它和默认的 `cargo package` 都会验证打包后的 crate 能否构建——注意它验证的是**打包后的内容**，不是你的工作目录，少一个文件在这里就会暴露。
 
 本机如果配了 crates.io 镜像，这一步会直接停住：
 
@@ -933,7 +933,7 @@ src/lib.rs
 to proceed despite this and include the uncommitted changes, pass the `--allow-dirty` flag
 ```
 
-**原因**：`cargo package`（以及内部调用它的 `cargo publish`）默认只打包 git 里已提交的内容，这样 `.crate` 与 tag 指向的代码一一对应。工作区有改动时它拒绝继续，并列出涉及的文件。上面那条 `warning` 是另一件事：清单里缺 `repository` 之类的元数据，crates.io 页面会显得很空，但不阻止打包。
+**原因**：`cargo package`（以及内部调用它的 `cargo publish`）默认检查待打包文件是否有未提交的改动，这样 `.crate` 与 tag 指向的代码一一对应。工作区有改动时它拒绝继续，并列出涉及的文件。上面那条 `warning` 是另一件事：清单里缺 `repository` 之类的元数据，crates.io 页面会显得很空，但不阻止打包。
 
 **修复**：先提交，再打包。真要在脏工作区验证打包结果，加 `--allow-dirty`；正式发布不要加这个参数，否则网上那个版本可能对应不到任何一次提交。
 
@@ -963,7 +963,7 @@ cargo publish --dry-run
 - `no_run` 只编译不运行，`ignore` 连编译都跳过，`should_panic` 要求 panic，`compile_fail` 要求编译失败；行首 `# ` 的隐藏行参与编译但不显示。
 - doctest 看到的世界和下游用户完全一样：只有公开 API、只有已声明的依赖、必须有 lib 目标；纯二进制 crate 跑不了 `--doc`。
 - `#![deny(missing_docs)]` 与 `rustdoc::broken_intra_doc_links` 把文档质量变成编译期错误，CI 再用 `RUSTDOCFLAGS="-D warnings"` 收口；`#[doc(hidden)]` 只是不展示，不改变 semver 义务。
-- Cargo 的版本要求默认是插入符语义；`0.x` 时次版本号承担主版本职责，破坏性变更的判断标准是"下游代码会不会编译不过"。
+- Cargo 的版本要求默认是插入符语义；`0.x` 时次版本号承担主版本职责，`0.0.x` 的兼容区间更窄；判断破坏性变更还要考虑已经承诺的运行行为。
 - `rust-version` 声明的 MSRV 必须由 CI 用对应工具链真跑一遍才算数；`Cargo.lock` 对应用提交、对纯库可选，`--locked` 用于需要强一致构建的场景。
 - CI 的标准配置是 fmt 单独一个 job，加上 stable/beta 乘多操作系统的矩阵，缓存用 `Swatinem/rust-cache`，并在 `--all-features` 之外补一条 `--no-default-features`。
 - 发布前依次做：补元数据、`cargo package --list` 看清单、`cargo publish --dry-run` 验证打包结果、提交干净工作区；发错只能 yank，不能删除或重发同一个版本号。

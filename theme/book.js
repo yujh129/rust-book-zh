@@ -35,7 +35,7 @@ function mdbook_something_else_has_focus(e) {
 }
 
 (function codeSnippets() {
-    function fetch_with_timeout(url, options, timeout = 6000) {
+    function fetch_with_timeout(url, options, timeout = window.RUSTBOOK_FETCH_TIMEOUT || 6000) {
         return Promise.race([
             fetch(url, options),
             new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), timeout)),

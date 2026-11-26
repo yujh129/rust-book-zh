@@ -184,7 +184,7 @@ fn main() {
 
 `get` 是索引的 Option 版本：范围非法时返回 `None`，不 panic。凡是"用户输入的位置可能不合法"的场合，都应该用 `get` 而不是下标。
 
-这两个工具合起来能写"按字节上限截断、但不切坏字符"的函数：从上限往回退，最多退 3 个字节必然落到边界上（一个字符最长 4 字节）。标准库里同语义的 `floor_char_boundary` 尚未稳定。
+这两个工具合起来能写"按字节上限截断、但不切坏字符"的函数：从上限往回退，最多退 3 个字节必然落到边界上（一个字符最长 4 字节）。在本书工具链上也可以直接写 `&s[..s.floor_char_boundary(max_bytes)]`，上限超过字符串长度时会停在末尾。
 
 ### 四个遍历接口
 
@@ -587,10 +587,10 @@ help: function arguments must have a statically known size, borrowed types alway
 ## 小结
 
 - `str` 是一段 UTF-8 字节，unsized；`String` 拥有堆缓冲区（指针、容量、长度三字段）；`&str` 是指针加长度的借用。
-- 切片是胖指针：`&[T]`、`&str` 各 16 字节，创建 O(1)，不拷贝数据，生命周期不得超过原数据。
-- 字符串下标按字节计数；合法范围要求两端都落在字符边界上，否则 panic。`len()` 是字节数，`chars().count()` 才是字符数。
+- 切片是胖指针：`&[T]`、`&str` 在本章的 64 位目标上各占 16 字节，创建 O(1)，不拷贝数据，生命周期不得超过原数据。
+- 字符串下标按字节计数；合法范围要求两端都落在字符边界上，否则 panic。`len()` 是字节数，`chars().count()` 统计 Unicode 标量值；一个用户眼中的字符可能包含多个标量值。
 - 用 `get` 代替下标处理不可信位置，用 `char_indices`/`is_char_boundary` 计算边界，`chars().nth(k)` 是 O(k)。
-- `split_at_mut`、`chunks_exact`、`windows`、`lines`、`trim` 覆盖了绝大多数切分需求；`lines` 会去掉行尾的 `\r`，`split('\n')` 不会。
+- `split_at_mut`、`chunks_exact`、`windows`、`lines`、`trim` 覆盖了绝大多数切分需求；`lines` 识别 `\n` 和 `\r\n`，保留单独的 `\r`，`split('\n')` 不会。
 - 参数收 `&str` 与 `&[T]`，Deref 强制转换让 `&String`、`&Box<str>`、`&Arc<str>` 都能直接传入，代价为零。
 - Deref 转换只发生在函数实参、带标注的 `let`、字段初始化、返回值这些位置；泛型不触发，需要 `AsRef<str>`。
-- 越界检查是运行期分支，release 也不会消失；`get` 返回 `Option`，`get_unchecked` 才是不安全出口。
+- 安全索引在越界时 panic；优化器若能证明索引有效，就可以消除运行期检查；`get` 返回 `Option`，`get_unchecked` 才是不安全出口。

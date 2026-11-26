@@ -238,7 +238,7 @@ big:   65538 字节
 fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output>;
 ```
 
-- `Pin<&mut Self>`：保证这一次 poll 期间 future 不会被移动，理由在 24.5 节。
+- `Pin<&mut Self>`：对于依赖地址稳定的 future，保证从固定起直到析构（包括两次 poll 之间）一直位于原处，理由在 24.5 节。
 - `Context<'_>`：目前只提供 `waker()`，返回 `&Waker`。它是 future 与执行器之间唯一的联系。
 - `Poll<Self::Output>`：`Ready` 或 `Pending`，没有第三种。
 
@@ -461,9 +461,9 @@ Rust 的普通值随时可能被移动：赋值、放进 `Vec` 触发扩容、�
 `Pin<P>` 是一个包装，保证它指向的值在"被固定"期间地址不变，`P` 通常是 `Box<T>` 或 `&mut T`。配套的 `Unpin` 是一个自动 trait，含义是"这个类型移动了也没关系"。规则可以压缩成四条：
 
 - 绝大多数类型自动实现 `Unpin`，包括所有字段都 `Unpin` 的结构体。对它们，`Pin<&mut T>` 可以用 `get_mut` 拿回 `&mut T`，与普通引用没有区别。
-- async 块生成的 future 只要捕获了自引用，就自动是 `!Unpin`。这个判断由编译器完成，你不需要手写任何标注。
+- 使用编译器生成的 async 块时，应按它没有实现 `Unpin` 来写；即使源码中看不到自引用，也可以用 `pin!` 固定后再手动轮询。
 - 固定一个值有三种常见方式：`Box::pin(v)` 固定在堆上；`pin!(v)` 固定在当前栈帧、直到作用域结束；`Pin::new(&mut v)` 只接受 `Unpin` 的类型。
-- 对于 `!Unpin` 的类型，想安全地拿到 `&mut T` 需要投影（projection），通常借助 `pin-project` 这类库；直接 `unsafe` 解引用则要自己保证不移动。
+- 投影（projection）可以取得未固定字段的 `&mut Field` 或固定字段的 `Pin<&mut Field>`。它不会把整个 `!Unpin` 值变回可以任意移动的 `&mut T`。
 
 看一个能跑的例子。`PhantomPinned` 是一个零大小的标记类型，把它放进结构体，结构体就失去 `Unpin`，效果等同于 future 的自引用：
 
@@ -862,7 +862,7 @@ fn main() {
 2. 给 24.4 节的 `Delay` 写一个 `Timeout<F>` 组合器：在 `F` 完成之前超时，就返回 `None`。只用标准库，并用 `block_on` 验证「先完成」和「先超时」两条路径。
 3. 写一个 `YieldNow` future，连续 `await` 三次，用 `block_on` 驱动并打印每次恢复的位置；再用 `size_of_val` 比较局部变量放在栈上与放进 `Box` 时 future 的大小。
 4. 把案例 3 里的 `fut.poll(&mut cx)` 改成 `pin!` 加 `as_mut()` 的写法，打印 `Poll` 的两种结果；然后故意去掉 `pin!`，确认报错与书中一致。
-5. 实现 `join2(a, b)`：要求 `A: Unpin`、`B: Unpin`，一次 poll 同时推进两个 future，任一返回 `Pending` 就返回 `Pending`。用两个 80 毫秒的 `Delay` 验证总耗时约 80 毫秒，而不是 160 毫秒。
+5. 实现 `join2(a, b)`：要求 `A: Unpin`、`B: Unpin`，一次 poll 同时推进两个 future，保存已经 `Ready` 的分支结果，后续只轮询尚未完成的分支；两边都就绪时才返回结果对。用两个 80 毫秒的 `Delay` 验证总耗时约 80 毫秒，而不是 160 毫秒。
 
 ## 小结
 
