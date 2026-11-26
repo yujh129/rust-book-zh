@@ -619,6 +619,9 @@ error: aborting due to 1 previous error
 For more information about this error, try `rustc --explain E0119`.
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：第一个 impl 是为所有满足 `T: Debug` 的类型实现的泛型 impl，第二个 impl 是为具体类型 `User` 实现的。由于 `User` 派生了 `Debug`，两个 impl 同时适用于 `User`，一致性规则（coherence）不允许同一个类型对同一个 trait 有两份实现，所以编译器报冲突。注意这和无辜的孤儿规则不是一回事：孤儿规则管的是「能不能为外部类型实现外部 trait」，报的是 E0117；这里管的是「两份 impl 是否重叠」，报的是 E0119。
 
 **修复**：
@@ -662,6 +665,8 @@ fn main() {
 
 去掉泛型 blanket impl，改为每个类型各写一份具体实现。如果确实需要「所有 Debug 类型都能 describe」的通用行为，应该另起一个 trait（例如 `DebugDescribe`），不要和具体类型的 impl 挤在同一个 trait 上。
 
+</details>
+
 ### 案例 2：trait 实现漏掉必需方法——E0046
 
 ```rust,editable
@@ -699,6 +704,9 @@ error: aborting due to 1 previous error
 For more information about this error, try `rustc --explain E0046`.
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：trait `Plugin` 声明了两个没有默认实现的方法，`impl` 里只提供了 `name`，`run` 缺失。编译器要求每个没有默认体的 trait 方法都在实现里出现，否则类型不完整，报 E0046。这也是 trait 与抽象类的一个区别：trait 的方法默认是「必须实现」，要提供默认行为必须显式写方法体。
 
 **修复**：
@@ -727,6 +735,8 @@ fn main() {
 ```
 
 补上 `run` 即可。如果多数实现的行为相同，也可以在 trait 里给 `run` 写默认方法体，实现方只在需要覆盖时才写。
+
+</details>
 
 ### 案例 3：sealed trait 的私有 supertrait 没实现——E0277
 
@@ -779,6 +789,9 @@ note: required by a bound in `Api`
 error: aborting due to 2 previous errors
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`Api` 的 supertrait 是 `sealed::Sealed`，任何类型想实现 `Api` 都必须先实现 `Sealed`。`Impl` 没有这一步，于是 trait bound 不满足，报 E0277；调用 `call` 时还会再报一次，因为方法本身也带着这个约束。如果这段代码来自外部 crate，那么 `Sealed` 所在的模块是私有的，外部连路径都写不出来，这个错误无法修复——这正是 sealed trait 想要的效果。
 
 **修复**：
@@ -808,6 +821,8 @@ fn main() {
 ```
 
 在本 crate 内部显式实现 `private::Sealed`，就能通过 supertrait 检查。要强调的边界是：能这样修，前提是代码和 `private` 模块在同一个 crate 里；跨 crate 时这条路被可见性堵死，封闭才成立。
+
+</details>
 
 ### 案例 4：newtype 忘记包裹返回值——E0308
 
@@ -839,6 +854,9 @@ help: try wrapping the expression in `Meters`
   |     +++++++       +
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：函数的返回类型写的是 `Meters`，函数体最后一行却是 `f64` 字面量。newtype 不会自动把内层类型转换成外层类型，构造一个 `Meters` 必须显式调用元组结构体的构造函数。编译器知道该怎么做，甚至在 help 里给出了补全建议，但它不会替你做这个决定，因为「包哪一层」是语义问题。
 
 **修复**：
@@ -857,6 +875,8 @@ fn main() {
 ```
 
 把返回值包进 `Meters(...)`。如果这个转换在代码里反复出现，可以给 newtype 实现 `From<f64>`，再在返回处用 `Meters::from(42195.0)` 或 `.into()`；但要注意 `From` 会让「任何 f64 都能变成 Meters」重新合法化，可能抵消 newtype 的部分保护作用。
+
+</details>
 
 ### 案例 5：typestate 未填必填字段就 build——E0599
 
@@ -913,6 +933,9 @@ error[E0599]: no method named `build` found for struct `Builder<Missing>` in the
    = note: the method was found for `Builder<Present>`
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`build` 定义在 `impl Builder<Present>` 上，而 `Builder::new()` 返回的是 `Builder<Missing>`。类型参数不匹配，方法解析失败，报 E0599；编译器的 note 已经指出了正确类型。这不是缺陷，而是 typestate 的核心机制：没经过 `name` 这一步，`build` 在类型上就不存在，漏填字段从运行期错误变成了编译错误。
 
 **修复**：
@@ -958,6 +981,8 @@ fn main() {
 ```
 
 先调用 `name`，把 `Builder<Missing>` 转成 `Builder<Present>`，`build` 才可见。这就是 37.3 里说的「把必填项编码进类型」：不是运行时检查，而是让缺字段的调用在编译期根本写不出来。代价是每个必填字段都要有一对状态类型和一个只在该状态存在的方法，字段多时样板会明显增加。
+
+</details>
 
 ## 动手练习
 

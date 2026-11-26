@@ -1103,6 +1103,10 @@ help: try using a conversion method
   |
 2 |     (&src[start..start + 2]).to_string()
 ```
+
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：函数签名把返回值定为 `String`，而 `src[a..b]` 的类型是 `&str`；函数体末尾表达式的类型必须与签名一致，借用不会自动变成所有权。同一个错误码也出现在 `match` 的分支分别返回整数与 `bool` 时，那时的报错标题是 `match` arms have incompatible types。**修复**：在切片后面接一次 `to_string()`，显式写出这次分配。
 ```rust,editable
 fn parse_string(src: &str, start: usize) -> String {
@@ -1112,6 +1116,8 @@ fn main() {
     println!("{}", parse_string("hi", 0));
 }
 ```
+
+</details>
 
 ### 案例 2：在 &self 方法里搬走字段——E0507
 ```rust,editable
@@ -1137,6 +1143,10 @@ help: consider cloning the value if the performance cost is acceptable
   |
 4 |         self.text.clone()
 ```
+
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`&self` 只借到共享引用，`self.text` 的所有权还留在调用方手里；`String` 没有实现 `Copy`，编译器不允许把字段从借用里搬出来。**修复**：克隆一份返回，或把方法改为接收 `self`；确实要清空字段时用 `std::mem::take(&mut self.text)` 换取所有权。
 ```rust,editable
 struct Doc { text: String }
@@ -1150,6 +1160,8 @@ fn main() {
     println!("{}", d.take());
 }
 ```
+
+</details>
 
 ### 案例 3：对枚举调用 to_string 却没有 Display——E0599
 ```rust,editable
@@ -1171,6 +1183,10 @@ error[E0599]: `JsonValue` doesn't implement `std::fmt::Display`
           `JsonValue: std::fmt::Display`
           which is required by `JsonValue: ToString`
 ```
+
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`to_string` 来自 `ToString`，而 `ToString` 由 `Display` 的兜底实现自动提供；`enum` 默认只实现 `Debug`，没有 `Display` 就没有 `to_string`。**修复**：为枚举实现 `Display`，在 `fmt` 里按变体分派。
 ```rust,editable
 use std::fmt;
@@ -1187,6 +1203,8 @@ fn main() {
     println!("{}", v.to_string());
 }
 ```
+
+</details>
 
 ### 案例 4：把一个值交给函数两次——E0382
 ```rust,editable
@@ -1211,6 +1229,10 @@ error[E0382]: use of moved value: `d`
   |                  ^ value used here after move
 note: consider changing this parameter type in function `dump` to borrow instead
 ```
+
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`dump(d)` 按值接收参数，取得 `d` 的所有权；第一次调用后 `d` 已被移动，第二次再用就是使用已移动的值。**修复**：把参数改成借用 `&Doc`，调用处写 `dump(&d)`；只有在结构体实现了 `Clone` 且确实要保留副本时才克隆。
 ```rust,editable
 struct Doc { text: String }
@@ -1224,6 +1246,8 @@ fn main() {
     println!("{} {}", a, b);
 }
 ```
+
+</details>
 
 ### 案例 5：问号运算符不会凭空转换错误类型——E0277
 ```rust,editable
@@ -1247,6 +1271,10 @@ note: `ParseError` needs to implement `From<std::io::Error>`
 2 | struct ParseError { pos: usize }
   | ^^^^^^^^^^^^^^^^^
 ```
+
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`?` 在提前返回之前会对错误值调用一次 `From` 转换；`read_to_string` 报的是 `std::io::Error`，函数的错误类型是 `ParseError`，两者之间没有 `From` 实现。**修复**：为一个错误类型实现 `From<std::io::Error>`，解析器就能把读文件的失败也收进同一条错误通道。
 ```rust,editable
 use std::fs;
@@ -1262,6 +1290,8 @@ fn main() {
     let _ = load("data.json");
 }
 ```
+
+</details>
 
 ## 完整源码
 

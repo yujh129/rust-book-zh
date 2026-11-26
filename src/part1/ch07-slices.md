@@ -417,6 +417,9 @@ end byte index 5 is not a char boundary; it is inside '好' (bytes 3..6 of strin
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：下标 5 落在"好"的第三个字节上。从这里切开，前半段以半个 UTF-8 字符结尾，不再是合法的 `str`，所以标准库在切片时直接 panic，而不是交出一段坏数据。
 
 **修复**：按字符取，或用 `get` 让非法范围返回 `None`：
@@ -428,6 +431,8 @@ fn main() {
     println!("{}", s.chars().take(1).collect::<String>()); // 你
 }
 ```
+
+</details>
 
 ### 案例 2：遍历字符时修改字符串
 
@@ -460,6 +465,9 @@ error[E0502]: cannot borrow `s` as mutable because it is also borrowed as immuta
   | |_____- this for loop borrows `s` immutably, preventing mutation within its body
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`chars()` 借走了 `&s`，迭代器还在读缓冲区；`push` 可能触发堆扩容并释放旧内存，让迭代器手里的指针悬垂。这与第 6 章"遍历时 push Vec"是同一个错误，只是换成了字符串。
 
 **修复**：先算出结果再替换，不要让读写重叠：
@@ -471,6 +479,8 @@ fn main() {
     println!("{s}");
 }
 ```
+
+</details>
 
 ### 案例 3：切片范围超出长度
 
@@ -488,6 +498,9 @@ range end index 10 out of range for slice of length 5
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`v` 的长度 5 要到运行期才确定（`Vec` 的缓冲区在堆上），编译器不会替你做这个检查，`Index` 实现里只有一句 `assert!`。范围来自计算时（`i + n`、用户输入、协议字段）这种情况极常见。
 
 **修复**：`get` 返回 `Option`，把越界变成可处理的分支：
@@ -499,6 +512,8 @@ fn main() {
     println!("{mid:?}");
 }
 ```
+
+</details>
 
 ### 案例 4：从切片里移出元素
 
@@ -529,6 +544,9 @@ help: consider cloning the value if the performance cost is acceptable
   |         ++++++++
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`v[0]` 是一个位置表达式，`String` 不实现 `Copy`，要把它赋值出去就得搬走三个字段。但 `&[String]` 只是借用，搬走会在原 `Vec` 里留下一个空洞，所以编译器拒绝。
 
 **修复**：借出去，而不是搬出去：
@@ -545,6 +563,8 @@ fn main() {
 ```
 
 确实需要一份独立副本时写 `v[0].clone()`，代价是堆分配，要写明白。
+
+</details>
 
 ### 案例 5：把 str 当成有大小的类型
 
@@ -572,9 +592,14 @@ help: function arguments must have a statically known size, borrowed types alway
   |                +
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`str` 是 unsized 类型，长度在运行期才知道，而函数参数要在栈上占一个大小固定的位置。报错里后续还会有 `E0308: expected str, found &str`，说的都是同一件事。
 
 **修复**：加一个 `&` 变成 `&str`，长度由胖指针携带；需要持有所有权时改成 `String`。
+
+</details>
 
 ## 动手练习
 

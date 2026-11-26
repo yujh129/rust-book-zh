@@ -98,3 +98,31 @@
         });
 })();
 </script>
+<script>
+// 案例答案折叠面板：Ace 编辑器若在隐藏容器里初始化，尺寸会是 0，展开后要让它重新排版；
+// 另外打印（含导出 PDF）前把所有答案临时展开，保证打印稿是完整的。
+(function () {
+    "use strict";
+    function resizeAce(root) {
+        if (!window.ace) { return; }
+        var editors = root.querySelectorAll(".ace_editor");
+        for (var i = 0; i < editors.length; i++) {
+            try { window.ace.edit(editors[i]).resize(true); } catch (e) { /* 不是 Ace 容器 */ }
+        }
+    }
+    document.addEventListener("toggle", function (e) {
+        var d = e.target;
+        if (d && d.tagName === "DETAILS" && d.open) { resizeAce(d); }
+    }, true);
+    var reopened = [];
+    window.addEventListener("beforeprint", function () {
+        reopened = [];
+        var all = document.querySelectorAll("details.case-answer:not([open])");
+        for (var i = 0; i < all.length; i++) { all[i].open = true; reopened.push(all[i]); }
+    });
+    window.addEventListener("afterprint", function () {
+        for (var i = 0; i < reopened.length; i++) { reopened[i].open = false; }
+        reopened = [];
+    });
+})();
+</script>

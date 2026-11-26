@@ -636,6 +636,9 @@ help: trait `BufRead` which provides `read_line` is implemented but not in scope
     |
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`read_line`、`lines`、`read_until` 这些方法不是 `BufReader` 自带的，而是 `BufRead` trait 提供的方法。Rust 的方法解析只查找「已引入作用域的 trait」，所以 `use std::io::BufReader` 让你能构造类型，却不让你调用 trait 方法。报错里的 `the method is available for BufReader<TcpStream> here` 已经把话说得很清楚。
 
 **修复**：把 trait 也引入。注意 rustc 给的补丁行号是 `1 +`，意思是插在第一行，实际写的时候两条 `use` 可以合并：
@@ -655,6 +658,8 @@ fn main() -> std::io::Result<()> {
 ```
 
 这类错误的识别特征是「方法明明存在，rustc 却在 `:::` 里指着标准库某个 `fn`」。看到 `items from traits can only be used if the trait is in scope` 就直接按 help 加 `use`。
+
+</details>
 
 ### 案例 2：把 bool 当计数返回
 
@@ -676,6 +681,9 @@ error[E0308]: mismatched types
   |                  expected due to this
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`Store::del` 的签名返回 `bool`（「到底删掉了没有」），因为惰性过期让「键不存在」和「键已过期」都表现为 `false`。而 RESP 的 `:` 类型要的是整数。两者语义相关但类型不同，编译器不会替你隐式转换——Rust 没有 C 那样的 bool 到整数的隐式提升。
 
 **修复**：在分发层显式转换。`bool as i64` 是 Rust 明确定义的行为（`true` 变 1、`false` 变 0），比写 `if x { 1 } else { 0 }` 更短且没有歧义：
@@ -685,6 +693,8 @@ error[E0308]: mismatched types
 ```
 
 顺带一提：反过来 `i64 as bool` 是不允许的（会报 `cannot cast `i64` as `bool`），因为非 0 值到 true 的映射在 C 里就是无数 bug 的来源，Rust 拒绝了这个转换。要用 `n != 0`。
+
+</details>
 
 ### 案例 3：给只读引用改数据
 
@@ -713,6 +723,9 @@ help: consider changing this to be a mutable reference
   |                 +++
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`set` 需要 `&mut self`（它要往 `HashMap` 里写），而参数是 `&Store`。共享引用背后是只读视图，Rust 不允许从只读视图借出可变引用。`main` 里那个 `s` 虽然声明成了 `mut`，但 `bump` 的签名决定了传进去的只是个只读借用。
 
 **修复**：把签名改成 `&mut`，调用处改成 `bump(&mut s)`。如果这个函数确实拿不到独占引用（比如它从 `Arc<Store>` 里来），那说明设计有问题，应该改用 `Mutex`/`RwLock` 或者内部可变性——这也是我们整个服务用 `Arc<Mutex<Store>>` 而不是 `Arc<Store>` 的原因：所有客户端共享的是「一把锁」，锁的 `lock()` 方法只需要 `&self`，它自己负责在内部拿到独占权。
@@ -728,6 +741,8 @@ fn main() {
     println!("{:?}", s.get("k"));
 }
 ```
+
+</details>
 
 ### 案例 4：在循环里移动 Arc
 
@@ -770,6 +785,9 @@ For more information about this error, try `rustc --explain E0382`.
 error: could not compile `miniredis` (example "e4b") due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`move` 闭包会把捕获的变量**移动**进去，而 `store` 在循环外只声明了一次。第一轮迭代把它移进第一个线程后，第二轮就没有可移的了。`Arc` 名字里带「引用计数」，很容易让人误以为它是 Copy 的——不是。`Arc<T>` 只是一个含指针和计数的结构体，按值传递时照样是移动。想共享就要显式增加计数，那个动作就是 `Arc::clone`。
 
 **修复**：在循环体内 clone 一个新句柄给线程，原句柄留在外面继续用：
@@ -783,6 +801,8 @@ for conn in listener.incoming() {
 ```
 
 注意 clone 出来的变量**同名遮蔽**了外层的 `store`，这是有意的：闭包里那份是线程自己的，外层那份下一轮继续 clone。`Arc::clone(&x)` 比 `x.clone()` 更推荐，因为它明确表达「我要的是 Arc 的克隆（加计数），不是里面 T 的克隆」——如果哪天 `Store` 实现了 `Clone`，`store.clone()` 会被解析成克隆整个哈希表，那是个巨大的性能陷阱。
+
+</details>
 
 ### 案例 5：用 `Rc<RefCell>` 共享给线程
 
@@ -833,6 +853,9 @@ For more information about this error, try `rustc --explain E0277`.
 error: could not compile `miniredis` (example "e7") due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`Rc` 的引用计数是**普通整数**，不是原子操作。两个线程同时 clone 或 drop，计数就会错乱：要么提前归零导致 use-after-free，要么永远不归零导致泄漏。所以 `Rc<T>` 没有实现 `Send`。`RefCell` 更糟，它的借用标志也是普通 `Cell<isize>`，两个线程同时 `borrow_mut` 会双双通过检查，直接造成数据竞争。`Rc<RefCell<T>>` 这个组合在单线程里是神器（第 18、19 章的主角），一旦跨线程就是双重违规。
 
 **修复**：换成 `Arc<Mutex<T>>`。`Arc` 的计数用原子指令，`Mutex` 用系统锁保证同一时刻只有一个线程能进临界区：
@@ -854,6 +877,8 @@ fn main() {
 ```
 
 这段会打印 `1`。判断一个类型能不能跨线程，看两个 auto trait 就够：`Send`（能把所有权移到别的线程）和 `Sync`（能被多个线程同时 `&` 引用）。`Rc`/`RefCell`/裸指针都不是 `Send`；`Arc<T>` 是 `Send` 当且仅当 `T: Send + Sync`。第 21、22 章有完整的对照表。
+
+</details>
 
 ## 完整源码
 

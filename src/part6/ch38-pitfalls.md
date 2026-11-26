@@ -780,6 +780,9 @@ error[E0502]: cannot borrow `scores` as mutable because it is also borrowed as i
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`for s in &scores` 创建了一个跨越整个循环体的共享借用，因为迭代器每轮都要从 `scores` 里取下一个元素；循环体里的 `scores.push` 又要求可变借用。两者区间重叠，违反"共享借用与可变借用不能并存"。注意编译器标出的是整段 `for` 区间，而不是单独一行——这就是 NLL 说的"借用一直活到迭代器最后一次使用"。
 
 **修复**：把"读"和"写"拆成两步，先收集要追加的元素，循环结束后再合并：
@@ -797,6 +800,8 @@ fn main() {
     println!("{:?}", scores);
 }
 ```
+
+</details>
 
 ### 案例 2：同时持有两个可变借用——E0499
 
@@ -826,6 +831,9 @@ error[E0499]: cannot borrow `v` as mutable more than once at a time
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`&mut v[0]` 和 `&mut v[1]` 在语法上是两个不相交的元素，但编译器只按"整块 `v`"来统计借用，看不到下标的区别。`max` 一直活到第 5 行被使用，第二个可变借用就与它重叠了。这类错误在"同时改两个字段"的代码里很常见。
 
 **修复**：用 `split_at_mut` 一次性把切片切成两段互不重叠的可变引用，或者改用下标分别赋值：
@@ -838,6 +846,8 @@ fn main() {
     println!("{:?}", v);
 }
 ```
+
+</details>
 
 ### 案例 3：借用活不过作用域——E0597
 
@@ -868,6 +878,9 @@ error[E0597]: `s` does not live long enough
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`text` 声明在内层块之外，但它借用的 `s` 在内层块结束时就被 drop 了。编译器把三个位置连起来读：第 5 行借出，第 6 行所有者销毁，第 7 行还在用。这就是"借用的存活区间必须被所有者的存活区间包住"。
 
 **修复**：让所有者和借用待在同一个作用域里，或者干脆让 `text` 拥有数据：
@@ -879,6 +892,8 @@ fn main() {
     println!("{}", text);
 }
 ```
+
+</details>
 
 ### 案例 4：返回指向局部变量的引用——E0515
 
@@ -906,6 +921,9 @@ error[E0515]: cannot return value referencing local variable `owned`
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`owned` 是函数内的局部变量，函数返回时它的堆缓冲会被释放。返回的 `&str` 指向那块已经归还的内存，编译器必须拦住。注意这与 E0597 的区别：E0597 是"调用方拿着引用太久"，E0515 是"函数自己想返回一个指向局部数据的引用"，问题出在签名上。
 
 **修复**：要么直接从入参借用（入参的存活期由调用方保证），要么返回拥有所有权的 `String`：
@@ -924,6 +942,8 @@ fn main() {
     println!("{}", first_byte_owned("hello"));
 }
 ```
+
+</details>
 
 ### 案例 5：collect 不知道变成什么——E0283
 
@@ -951,6 +971,9 @@ help: consider giving `lens` an explicit type
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`collect` 的返回类型由泛型参数 `B` 决定，而 `B` 只需要实现 `FromIterator<usize>`。`Vec<usize>`、`HashSet<usize>`、`VecDeque<usize>` 都满足，后面的 `println!("{:?}")` 又只要求 `Debug`，没有任何信息能把这个集合定下来。编译器于是报"需要类型标注"，而不是替你选一个。
 
 **修复**：在绑定上写类型，或者用 turbofish 指定 `collect::<目标类型>()`：
@@ -965,6 +988,8 @@ fn main() {
     println!("{}", total);
 }
 ```
+
+</details>
 
 ## 动手练习
 

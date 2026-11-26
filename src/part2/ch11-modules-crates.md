@@ -505,6 +505,9 @@ help: consider importing this struct instead
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`use` 后面的路径必须**完整**，每一层模块都要写出来。`Rectangle` 定义在 `geometry` 的**子模块** `rect` 里，它的真实路径是 `crate::geometry::rect::Rectangle`；`crate::geometry::Rectangle` 这个名字在 `geometry` 这一层根本不存在。
 
 **修复**：补上 `rect`。如果不想让调用方关心内部层级，就在 `geometry` 里重导出（11.7 的做法）：
@@ -528,6 +531,8 @@ fn main() {
     println!("{}", r.width);
 }
 ```
+
+</details>
 
 ### 案例 2：忘了给中间模块加 pub——E0603
 
@@ -564,6 +569,9 @@ note: the module `rect` is defined here
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`Rectangle` 本身是 `pub`，但它所在的 `rect` 模块是私有的。可见性要逐层检查：一条路径上的任何一层不可见，整条路径就不可达。报错指向的是 `rect`，不是 `Rectangle`，这一点很容易看错。
 
 **修复**：把 `rect` 也标成 `pub`，或者像案例 1 那样用 `pub use` 把类型提到一个公开的层级：
@@ -584,6 +592,8 @@ fn main() {
     println!("{}", r.width);
 }
 ```
+
+</details>
 
 ### 案例 3：模块文件没建——E0583
 
@@ -608,6 +618,9 @@ error[E0583]: file not found for module `shapes`
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`mod shapes;` 是一条"去磁盘找文件"的指令，编译器按 11.4 的规则去找 `src/shapes.rs` 或 `src/shapes/mod.rs`，两个都没有。注意它不会退化成"内容为空的模块"，而是直接编译失败——Rust 宁可报错也不猜你的意图。提示里的路径分隔符随平台变化，Windows 上是反斜杠。
 
 **修复**：建出文件，并把它放进模块树。单文件等价写法如下，真实项目里对应新建 `src/shapes.rs`：
@@ -623,6 +636,8 @@ fn main() {
     println!("{}", shapes::area(2, 3));
 }
 ```
+
+</details>
 
 ### 案例 4：子模块里直接叫兄弟模块——E0433
 
@@ -670,6 +685,9 @@ help: consider importing this module
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：模块不会把兄弟模块自动带进作用域。`rect` 里能直接写 `shape`，前提是 `shape` 在这个模块里有一条名字记录——要么它定义在 `rect` 内部，要么被 `use` 进来。编译器甚至先怀疑你少装了一个 crate，因为裸名字 `shape` 也可能是外部 crate 名。
 
 **修复**：在 `rect` 模块内加一条 `use`。用 `crate::` 开头的绝对路径，比 `super::` 更不容易在挪动模块时失效：
@@ -702,6 +720,8 @@ fn main() {
     println!("{}", r.describe());
 }
 ```
+
+</details>
 
 ### 案例 5：导入的名字和本地定义撞车——E0255
 
@@ -742,6 +762,9 @@ help: you can use `as` to change the binding name of the import
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`use` 引入的是一个真实的名字，它和本地定义共享同一个命名空间。函数、常量、单元结构体都住在"值命名空间"里，所以两处同名就是重复定义。注意这和"同名方法与自由函数"不同——方法在类型的 impl 里，不占模块的值命名空间。
 
 **修复**：给导入改名，或者删掉其中一个。编译器的建议是前者：
@@ -763,6 +786,8 @@ fn main() {
     println!("{} {}", area(2, 3), geometry_area(2, 3));
 }
 ```
+
+</details>
 
 ## 动手练习
 

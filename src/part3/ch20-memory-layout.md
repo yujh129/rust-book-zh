@@ -844,6 +844,9 @@ error[E0587]: type has conflicting packed and align representation hints
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`packed` 要求"对齐降到 1"，`align(8)` 要求"对齐升到 8"，两者在语义上直接矛盾。编译器不做折中，直接拒绝。
 
 **修复**：二选一。需要紧凑布局用 `packed`，需要高对齐用 `align`：
@@ -863,6 +866,8 @@ fn main() {
     println!("{} {}", std::mem::size_of::<Compact>(), std::mem::size_of::<Aligned>());
 }
 ```
+
+</details>
 
 ### 案例 2：取 `packed` 结构体字段的引用——E0793
 
@@ -894,6 +899,9 @@ error[E0793]: reference to field of packed struct is unaligned
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`b` 在 offset 1，而 `u32` 需要 4 字节对齐。`&p.b` 会得到一个地址不是 4 的倍数的 `&u32`，而 Rust 保证 `&T` 永远对齐——违反它就是 UB，所以编译器用借用检查器拦住你。注意报错说的是"即使不解引用也是 UB"：`&T` 这个类型本身就携带了对齐承诺。
 
 **修复**：复制到局部变量（`Copy` 类型），或用 `std::ptr::read_unaligned`：
@@ -918,6 +926,8 @@ fn main() {
 }
 ```
 
+</details>
+
 ### 案例 3：对不定长类型求尺寸——E0277
 
 ```rust,editable
@@ -940,6 +950,9 @@ note: required by an implicit `Sized` bound in `std::mem::size_of`
   = note: ...
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`str`、`[T]`、`dyn Trait` 都是**不定长类型**（unsized），大小取决于运行期的长度。`size_of::<T>` 的 `T` 有隐式 `Sized` bound，所以 `str` 不满足。
 
 **修复**：用 `&str`（胖指针，16 字节），或用 `size_of_val` 对具体的值求大小：
@@ -955,6 +968,8 @@ fn main() {
 ```
 
 `size_of_val(s)` 对 `&str` 返回 16（胖指针本身的尺寸），`s.len()` 返回 5（内容的字节数）。两者容易混淆。
+
+</details>
 
 ### 案例 4：`transmute` 尺寸不匹配——E0512
 
@@ -979,6 +994,9 @@ error[E0512]: cannot transmute between types of different sizes, or dependently-
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`transmute` 是"把这些字节重新解释成另一个类型"，类型尺寸必须完全相同，否则会读越界或留下垃圾字节。`u64` 有 64 位，源只有 32 位。
 
 **修复**：显式转换，保留语义：
@@ -996,6 +1014,8 @@ fn main() {
 ```
 
 注意字节序：`transmute` 得到的是内存中的原始字节，在小端机器上 `x = 1` 会变成 `[1, 0, 0, 0]`。跨平台序列化要用 `to_le_bytes`。
+
+</details>
 
 ### 案例 5：透明的结构体有两个字段——E0690
 
@@ -1026,6 +1046,9 @@ error[E0690]: transparent struct needs at most one non-trivial field, but has 2
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`transparent` 的语义是"这个类型与它唯一的非零字段 ABI 完全相同"。有两个非零字段时，它就不再是"透明"的，而是普通结构体。
 
 **修复**：去掉 `transparent`，或只保留一个载荷字段（其他字段必须是 ZST，例如 `PhantomData`）：
@@ -1044,6 +1067,8 @@ fn main() {
     println!("{} {}", t.value, std::mem::size_of_val(&t));
 }
 ```
+
+</details>
 
 ## 动手练习
 

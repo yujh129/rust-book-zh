@@ -467,6 +467,9 @@ note: required by a bound in `report`
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`<T: Shape>` 是调用点必须满足的约束，编译器先查 bound 再谈单态化，所以错误落在 `report(&c)` 而不是函数体里。help 第二句 “this trait has no implementations” 说明整个程序里 `Shape` 一个实现都没有；如果你写了 impl 但类型名写错，这句不会出现，可以用它区分“忘了实现”和“实现到了别的类型上”。
 
 **修复**：补上 `impl Shape for Circle`：
@@ -495,6 +498,8 @@ fn main() {
     report(&c);
 }
 ```
+
+</details>
 
 ### 案例 2：trait 方法返回 Self——E0038
 
@@ -532,6 +537,9 @@ note: for a trait to be dyn compatible it needs to allow building a vtable
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：vtable 的前提是所有实现共用一套调用约定。`duplicate` 的返回类型随实现类型变化、大小未知，编译器没法为 `dyn Cloneable` 生成固定布局的返回槽，于是整个 trait 失去 dyn 兼容性。help 建议把方法移到另一个 trait，就是让主 trait 的每个方法都能进表。
 
 **修复**：只让具体类型使用这个方法，给它加 `where Self: Sized`，它就退出了 vtable：
@@ -566,6 +574,8 @@ fn main() {
 }
 ```
 
+</details>
+
 ### 案例 3：给外部类型实现外部 trait——E0117
 
 ```rust,editable
@@ -598,6 +608,9 @@ error[E0117]: only traits defined in the current crate can be implemented for ty
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`Display` 和 `Vec` 都来自标准库，孤儿规则不允许。判定方式是“在遇到未覆盖的类型参数之前，必须先出现一个本地类型”：`Vec<i32>` 的最外层是外部的 `Vec`，`i32` 也是外部的，找不到本地类型。写成 `impl<T> Display for Vec<T>` 同样不行——`T` 未覆盖，下游可以把它填成本地类型，等于让别的 crate 间接实现了外部 trait。
 
 **修复**：用 newtype 把外部类型包一层，包装类型是本地类型，规则就满足了：
@@ -618,6 +631,8 @@ fn main() {
     println!("{}", Numbers(vec![1, 2, 3]));
 }
 ```
+
+</details>
 
 ### 案例 4：trait 没导入，方法找不到——E0599
 
@@ -666,6 +681,9 @@ help: trait `Shape` which provides `area` is implemented but not in scope; perha
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：方法解析分两步——先找类型上的固有方法，再在“当前作用域内的 trait”里找。`Shape` 定义在 `shapes` 模块里，`main` 没有把它引入作用域，候选集里就没有 `area`。`= help: items from traits can only be used if the trait is in scope` 是这条规则的原话。
 
 **修复**：把 trait 引入作用域。`use shapes::Shape as _;` 也可以，它只引入方法、不引入名字，适合两个 trait 有同名方法时避免冲突：
@@ -694,6 +712,8 @@ fn main() {
     println!("{:.2}", c.area());
 }
 ```
+
+</details>
 
 ### 案例 5：关联类型没写清属于哪个 trait——E0223
 
@@ -733,6 +753,9 @@ help: use fully-qualified syntax
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`Numbers::Item` 只说了“某个 `Item`”，没说属于哪个 trait。一个类型可以实现多个带同名关联类型的 trait（标准库的 `IntoIterator` 就是一个），编译器拒绝猜；即使实际上只有一个实现，判定也发生在类型检查阶段，不做全局唯一性推理。
 
 **修复**：用全限定语法写死 trait：
@@ -753,6 +776,8 @@ fn main() {
     println!("{}", x);
 }
 ```
+
+</details>
 
 ## 动手练习
 

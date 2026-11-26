@@ -647,6 +647,9 @@ error[E0432]: unresolved import `proc_macro`
   = help: if you wanted to use a crate named `proc_macro`, use `cargo add proc_macro` to add it to your `Cargo.toml`
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：Cargo 默认把 [lib] 当成普通库（crate type 为 rlib）编译。普通库既不能导入 proc_macro 这个编译器内部 crate，也不允许出现 #[proc_macro_derive] 等入口属性。编译器校验 crate type 时先把属性驳回，名称解析再报 proc_macro 找不到。这两条错误指向同一个根因，别被第二条的 help 误导去 cargo add proc_macro——那不解决问题。
 
 **修复**：在宏 crate 的 Cargo.toml 里显式声明 crate 类型。注意 proc-macro crate 只能导出宏，不能同时当普通库用，所以这份配置必须放在 34.2 说的独立 crate 里：
@@ -655,6 +658,8 @@ error[E0432]: unresolved import `proc_macro`
 [lib]
 proc-macro = true
 ```
+
+</details>
 
 ### 案例 2：忘了把 proc_macro2 的 token 转回 proc_macro
 
@@ -697,6 +702,9 @@ help: call `Into::into` on this expression to convert `proc_macro2::TokenStream`
 
 换个位置犯同一个错，报错会变样：如果入口函数签名直接写成 proc_macro2::TokenStream，编译器报的是 derive proc macro has incorrect signature，并列出它期望的完整签名 fn(proc_macro::TokenStream) -> proc_macro::TokenStream。过程宏入口的类型是被编译器写死的，不能换。
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：quote! 返回的是 proc_macro2::TokenStream，它是 proc_macro::TokenStream 的跨平台封装，名字像但是两个独立类型，没有任何隐式转换。编译器只接受 proc_macro::TokenStream 作为过程宏的输入输出，代码内部用 proc_macro2 是为了让逻辑可测试、可脱离编译器运行。
 
 **修复**：在返回值处补一次 .into()。proc_macro2::TokenStream 和 proc_macro::TokenStream 互相都实现了 From，两个方向都能转：
@@ -712,6 +720,8 @@ pub fn nope(input: TokenStream) -> TokenStream {
     .into()
 }
 ```
+
+</details>
 
 ### 案例 3：调用 to_token_stream 却没引入 trait
 
@@ -750,6 +760,9 @@ help: there is a method `into_token_stream` with a similar name
    |                         ++
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：to_token_stream 不是 Ident 自带的方法，而是 quote::ToTokens trait 提供的方法。Rust 要求 trait 必须在作用域里，方法才会出现在方法解析结果中。这个文件只写了 use quote::quote;，引的是宏而不是 trait，所以编译器说"trait 已实现但不在作用域"。quote! 模板里写 #name 之所以没事，是因为宏展开成的是完全限定的方法调用，不依赖引入。
 
 **修复**：导入 trait。编译器提示的 quote::to_tokens::ToTokens 能用，但惯用写法是直接使用重导出路径：
@@ -759,6 +772,8 @@ use quote::ToTokens;
 
 let expanded = name.to_token_stream();
 ```
+
+</details>
 
 ### 案例 4：把函数当 DeriveInput 解析
 
@@ -799,6 +814,9 @@ error: expected one of: `struct`, `enum`, `union`
   | ^^
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：DeriveInput 的解析器只认 struct、enum、union 三种开头。它看到 fn 这个关键字时，lookahead 直接把候选集列出来。注意报错位置在**使用者**的 main.rs，而不是宏 crate——因为解析发生在展开期，span 指向被展开的 token。这类"报错文件不在宏 crate"的现象，正是判断问题出在输入形状而不是宏实现的重要线索。
 
 **修复**：按被标注的目标选类型。标注函数就用 ItemFn，标注结构体就用 ItemStruct；如果一个宏要同时接受多种目标，解析成 syn::Item 再 match：
@@ -821,6 +839,8 @@ pub fn as_derive(_attr: TokenStream, item: TokenStream) -> TokenStream {
     quote::quote! { impl #name {} }.into()
 }
 ```
+
+</details>
 
 ### 案例 5：生成的代码调用了宏 crate 里的私有函数
 
@@ -866,6 +886,9 @@ error[E0425]: cannot find function `hello_name_impl` in this scope
 
 宏 crate 自己还会顺带报一条 warning: function hello_name_impl is never used——因为它在宏 crate 里确实没人调用。
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：这是卫生性与可见性的双重问题。过程宏生成的 token 默认带调用处的 span，hello_name_impl 这个名字会在**使用者 crate** 里解析；而那个函数定义在宏 crate 里，是私有项，也不在用户 crate 的依赖图中（proc-macro crate 只能导出宏，运行期不可链接）。编译器找不到它，只能按"未定义的函数"报 E0425。注意报错指向 derive 那一行，而不是宏 crate，这是过程宏问题的典型特征。
 
 **修复**：要么把逻辑内联进生成代码，要么把共享代码放进一个普通运行时 crate，让使用者也依赖它，再用绝对路径调用：
@@ -883,6 +906,8 @@ quote! {
 // 如果逻辑确实要共享，就建一个普通 crate（例如 hello-runtime），
 // 宏生成 ::hello_runtime::hello_name(&self.name)，并由使用者依赖 hello-runtime。
 ```
+
+</details>
 
 ## 动手练习
 

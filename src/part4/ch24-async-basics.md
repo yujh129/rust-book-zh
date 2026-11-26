@@ -656,6 +656,9 @@ error[E0369]: cannot add `{integer}` to `impl Future<Output = i32>`
   |                    impl Future<Output = i32>
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`answer()` 返回的是 future，不是 `i32`。`+` 没有为 future 实现，编译器于是把两边的类型都列了出来。
 
 **修复**：不需要异步就去掉 `async`；需要异步就在 async 上下文里 `answer().await`，并让执行器驱动它。
@@ -669,6 +672,8 @@ fn main() {
     println!("{}", answer() + 1);
 }
 ```
+
+</details>
 
 ### 案例 2：在普通函数里 .await——E0728
 
@@ -692,6 +697,9 @@ error[E0728]: `await` is only allowed inside `async` functions and blocks
   |                      ^^^^^ only allowed inside `async` functions and blocks
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`.await` 需要一块由编译器生成的状态机来保存进度，`main` 是普通函数，没有这台状态机。
 
 **修复**：把 await 放进 async 函数，由执行器驱动（24.4 节的 `block_on`，或第 25 章的 `#[tokio::main]`）。
@@ -709,6 +717,8 @@ fn main() {
     let _fut = run(); // 交给执行器；这里只演示类型能通过检查
 }
 ```
+
+</details>
 
 ### 案例 3：直接对 future 调 poll——E0599
 
@@ -741,6 +751,9 @@ help: consider pinning the expression
 12 ~     let _ = pinned.as_mut().poll(&mut cx);
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`poll` 的接收者是 `Pin<&mut Self>`，不是 `&mut self`。一个没被固定的 future 连 poll 这个方法都找不到（24.5 节解释了原因）。
 
 **修复**：用 `pin!` 或 `Box::pin` 固定，再通过 `as_mut()` 拿到 `Pin<&mut _>`。
@@ -763,6 +776,8 @@ fn main() {
     }
 }
 ```
+
+</details>
 
 ### 案例 4：跨 await 持有 Rc，future 不再是 Send
 
@@ -799,6 +814,9 @@ note: future is not `Send` as this value is used across an await
    |                            ^^^^^ await occurs here, with `shared` maybe used later
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`Rc` 的计数不是原子的，不能跨线程。`shared` 活过了 await，于是它成为状态机的字段，整个 future 跟着变成 `!Send`。
 
 **修复**：换成 `Arc`，或者让 `Rc` 在 await 之前 `drop`（缩小作用域）。也可以换一个不要求 `Send` 的执行器。
@@ -818,6 +836,8 @@ fn main() {
     require_send(task());
 }
 ```
+
+</details>
 
 ### 案例 5：async fn 的返回类型不对——E0308
 
@@ -841,6 +861,9 @@ error[E0308]: mismatched types
   |     ^^^^^^ expected `u16`, found `&str`
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`async` 只改变返回类型的外层（包一层 future），`Output` 仍然是 `u16`。函数体返回的是 `&str`，与声明不符。
 
 **修复**：转换类型，让最后一个表达式的类型与 `Output` 一致。
@@ -855,6 +878,8 @@ fn main() {
     println!("解析函数已就绪");
 }
 ```
+
+</details>
 
 ## 动手练习
 

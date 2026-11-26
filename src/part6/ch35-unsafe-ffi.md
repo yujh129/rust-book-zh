@@ -631,6 +631,9 @@ error[E0133]: dereference of raw pointer is unsafe and requires unsafe function 
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：解引用裸指针是那五个能力之一，编译器无法验证它指向的内存是否有效、是否对齐、是否已经被释放。注意报错只落在 `*p` 上：上一行 `&value as *const i32` 是安全的，创建指针不需要 unsafe。很多人看到 E0133 就把整个函数包进 unsafe 块，那只是把警告压下去，没有解决任何问题。
 
 **修复**：把解引用圈进 unsafe，并在上方写清这次为什么安全。范围要尽可能小：
@@ -644,6 +647,8 @@ fn main() {
     println!("{}", v);
 }
 ```
+
+</details>
 
 ### 案例 2：把 String 直接传给 C 函数——E0308
 
@@ -677,6 +682,9 @@ note: function defined here
   |        ^^^^^^ -
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`String` 是「指针 + 长度 + 容量」的三字段结构体，C 要的是一个指向以 0 结尾字节序列的裸指针。两者的内存表示完全不同，编译器不会替你转换——这是好事，因为自动转换会悄悄丢掉长度或忘记补 0。顺带一提，这里写 `i8` 也不严谨，应该用 `std::os::raw::c_char`，它在不同平台上可能是 `u8`。
 
 **修复**：用 `CString` 造一块以 0 结尾的缓冲，再用 `as_ptr()` 取出指针。`CString` 必须在调用期间存活：
@@ -696,6 +704,8 @@ fn main() {
     println!("len = {}", len);
 }
 ```
+
+</details>
 
 ### 案例 3：把裸指针送进线程——E0277
 
@@ -731,6 +741,9 @@ note: required because `p` is used within this closure
     |                        ^^
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`Send` 表示「这个值可以安全地转移到另一个线程」。裸指针没有实现 `Send`，因为它不携带任何所有权或同步信息：编译器不知道这个地址会不会在另一个线程里被同时写，也不知道它指向的对象还活着没有。`&i32` 能跨线程是因为 `i32: Sync` 且借用检查器能证明它活着；裸指针把这两条保证都丢了。
 
 **修复**：优先换成共享所有权加锁的类型，让编译器重新拿到保证：
@@ -749,6 +762,8 @@ fn main() {
 ```
 
 如果确实必须传裸指针（比如把地址交给一个自己保证线程安全的 C 库），只能定义一个 newtype 并手写 `unsafe impl Send`。那一刻起，「这个指针跨线程安全」的责任就正式从编译器转移到了你身上。
+
+</details>
 
 ### 案例 4：transmute 两侧大小不一致——E0512
 
@@ -771,6 +786,9 @@ error[E0512]: cannot transmute between types of different sizes, or dependently-
   = note: target type: `[u8; 8]` (64 bits)
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`transmute` 不做任何数值转换，它只是「把同一段比特重新解释成另一个类型」，所以要求源和目标的字节数完全相同。`u32` 是 4 字节，`[u8; 8]` 是 8 字节，编译器在编译期就能发现不匹配，于是用 E0512 拦下来——这比运行期读到半截数据好得多。
 
 **修复**：想拆字节就用专门的转换函数，它们不仅大小对，还把端序写进了名字：
@@ -782,6 +800,8 @@ fn main() {
     println!("{:?}", bytes);
 }
 ```
+
+</details>
 
 ### 案例 5：释放后继续读指针——没有编译错误，但它是 UB
 
@@ -806,6 +826,9 @@ fn main() {
 读到的值 = 0
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`Box::from_raw(p)` 把所有权收回并 drop，堆内存被分配器回收，`p` 从那一刻起就是悬垂指针。解引用它的前提「指针指向一块存活的分配」不再成立。编译器检查不了这一点，因为要判断必须跨语句跟踪所有权的运行时流向——这恰恰是安全 Rust 用所有权模型替你避免的东西，而裸指针把这个模型绕过去了。
 
 注意三次运行得到三个不同的值，release 下又是另一个值。这就是 UB 的典型表现：它不是「保证读到 42」，也不是「保证崩溃」，而是「行为没有承诺」。
@@ -822,6 +845,8 @@ fn main() {
     unsafe { drop(Box::from_raw(p)) };
 }
 ```
+
+</details>
 
 ## 动手练习
 

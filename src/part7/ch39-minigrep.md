@@ -574,6 +574,9 @@ help: consider using the `'a` lifetime
   |                                                       +=
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：返回值里的 `&str` 有两个可能的来源，编译器不会替你猜。生命周期省略规则只对「单个输入引用」或「&self 方法」生效，两个引用参数的函数必须显式标注。
 
 **修复**：把返回值的生命周期绑到 `contents`：
@@ -590,6 +593,8 @@ fn main() {
     println!("{:?}", search("duct", &c));
 }
 ```
+
+</details>
 
 ### 案例 2：返回借用局部变量的切片
 
@@ -615,6 +620,9 @@ error[E0515]: cannot return value referencing local variable `lower`
   |     `lower` is borrowed here
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`lower` 是函数内的局部 `String`，函数返回时它被 drop，返回的切片会指向已释放的内存。Rust 用借用检查器把这种悬垂引用挡在编译期。
 
 **修复**：返回拥有所有权的 `String`，或者不在函数内创建临时字符串：
@@ -634,6 +642,8 @@ fn main() {
     println!("{:?}", first_word("Hello World"));
 }
 ```
+
+</details>
 
 ### 案例 3：在返回 () 的 main 里用 ?
 
@@ -662,6 +672,9 @@ help: consider adding return type
   |
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`?` 的语义是「失败就 return Err」。返回 `()` 的函数没法 return `Err`，所以编译器禁止。
 
 **修复**：让 main 返回 `Result`（失败时退出码自动变成 1），或改用 `ExitCode` 手动处理：
@@ -673,6 +686,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 ```
+
+</details>
 
 ### 案例 4：ExitCode 与整数混用
 
@@ -705,6 +720,9 @@ help: call `Into::into` on this expression to convert `{integer}` into `ExitCode
   |                 +++++++
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`ExitCode` 是 `process` 模块里的类型，不会和 `i32` 自动互转。`ExitCode::SUCCESS` 是 0，`ExitCode::FAILURE` 是 1，其他值要 `ExitCode::from(n: u8)`。
 
 **修复**：
@@ -720,6 +738,8 @@ fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 ```
+
+</details>
 
 ### 案例 5：把 Vec 移进函数后又使用
 
@@ -757,6 +777,9 @@ error[E0382]: borrow of moved value: `args`
 note: consider changing this parameter type in function `build` to borrow instead if owning the value isn't necessary
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`build(args)` 按值接收 `Vec`，所有权被移进函数；`main` 之后不能再碰 `args`。这个报错本身把修复方案都说出来了。
 
 **修复**：改成借用 `&[String]`（也正是 39.3 里 `Config::build` 的签名）：
@@ -778,6 +801,8 @@ fn main() {
     println!("{:?}", config);
 }
 ```
+
+</details>
 
 ## 完整源码
 

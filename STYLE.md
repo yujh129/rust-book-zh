@@ -42,12 +42,20 @@
 error[EXXXX]: ...        // 贴真实报错，允许省略与本题无关的行
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：……（一到两段，讲编译器在检查什么）
-**修复**：……（给出改好的代码）
+
+**修复**：……（给出改好的代码；修复版的完整代码块也放在里面）
+
+</details>
 
 ### 案例 2：……
 
 （每章 3～5 个，覆盖本章最常踩的坑；案例之间不重复）
+
+答案（`**原因**` 到本案例结束，含修复版代码块）必须包在 `<details class="case-answer">` + `<summary>查看答案</summary>` 里：默认收起，读者先自己想一想，再点开对照。这是正文里唯一允许出现的 HTML；`python tools/wrap_answers.py` 可以检查并补上这层包装。
 
 ## 动手练习
 
@@ -101,6 +109,7 @@ error[EXXXX]: ...        // 贴真实报错，允许省略与本题无关的行
 - 紧跟其后的 ```text 是**本机 rustc 的真实输出**，首行形如 `error[E0382]: ...`，读者改着改着就会拿它对照。
 - 修复后的完整代码也用 ```rust,editable，让读者能从错误版一步步改到修复版。
 - 需要外部 crate 的案例（tracing、clap、tokio、serde……）同样可以 editable，本地运行器内置 9 个常用 crate；超出这个范围的用 noplayground。
+- 答案收起：`**原因**` 到本案例结束（含修复版代码块）包在 `<details class="case-answer">` + `<summary>查看答案</summary>` 中，默认收起。这是正文里唯一允许的 HTML，`python tools/wrap_answers.py --only <章名>` 负责检查与补齐。
 - 测试代码（`#[test]`、`#[cfg(test)] mod tests`）也可以 editable：本地运行器看到这些标记就按 `cargo test` 编译运行，输出 `running N tests` / `test ... ok` / `test result: FAILED`。只有 `cargo build` 层面才会出现的报错（例如没有 `main` 的 E0601）仍写成 noplayground，并在正文里说清本地怎么复现。
 
 自检（写完一章就跑）：
@@ -120,6 +129,7 @@ python tools/verify_cases.py --local --only <章名> # 不启动运行器，直�
 - **报错信息贴 rustc 原文**（可截断无关行），解释用中文。
 - **给出修复后的完整代码**，而不是只说"加个 mut"。
 - 案例顺序按出现频率和教学价值排，不按章节顺序。
+- **答案默认收起**：原因与修复放在 `<details class="case-answer">` 里，读者点「查看答案」才展开；打印或导出 PDF 时由页面脚本自动展开，所以不需要为打印另写一份。
 
 ## 7. 项目章节（第七部分）的写法
 

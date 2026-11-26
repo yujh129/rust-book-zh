@@ -686,6 +686,9 @@ error[E0599]: no associated function or constant named `parse` found for struct 
 For more information about this error, try `rustc --explain E0599`.
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`Parser` 在这里不是类型而是派生宏，`#[arg]` 也只是派生宏认识的辅助属性。两者都必须先在作用域里，编译器才知道 `#[derive(Parser)]` 要展开成什么、`#[arg]` 该交给谁处理。而 `parse()` 是 `clap::Parser` trait 上的方法，trait 不在作用域里就找不到——所以同一个根因被报了三次：宏找不到、属性找不到、方法找不到。
 
 **修复**：加一行 `use`。
@@ -703,6 +706,8 @@ fn main() {
     println!("{}", Cli::parse_from(["demo", "--port", "8080"]).port);
 }
 ```
+
+</details>
 
 ### 案例 2：子命令枚举漏派生——E0277
 
@@ -753,6 +758,9 @@ help: the trait `Subcommand` is not implemented for `Command`
     | ^^^^^^^^^^^^
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`#[command(subcommand)]` 本身不生成任何解析逻辑，它只是声明「这个字段的类型要能充当子命令」。于是编译器要求 `Command` 同时实现 `Subcommand`（提供命令描述，也就是帮助里那个 `add`）和 `FromArgMatches`（把匹配结果定型成枚举）。这两个 trait 正是 `#[derive(Subcommand)]` 一起生成的东西，漏掉派生就只剩「字段声明了一个不满足约束的类型」。
 
 **修复**：给枚举补上派生，并把 `Subcommand` 引入作用域。
@@ -777,6 +785,8 @@ fn main() {
     println!("{:?}", cli.command);
 }
 ```
+
+</details>
 
 ### 案例 3：ValueEnum 少了 Clone——E0277
 
@@ -820,6 +830,9 @@ help: consider annotating `Mode` with `#[derive(Clone)]`
     |
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`ValueEnum` 的声明是 `pub trait ValueEnum: Sized + Clone`，父 trait 里带着 `Clone`。生成候选值列表、把匹配到的值交还给你，都要复制枚举值，所以只派生 `ValueEnum` 不满足约束。同一份报错会在字段处再出现一次（`ArgMatches::remove_one` 也要求 `Clone`），根因只有一个。
 
 **修复**：`#[derive(ValueEnum, Clone, Debug)]`——习惯上顺手加上 `Copy`，让枚举在两处使用时不必 `.clone()`。
@@ -844,6 +857,8 @@ fn main() {
     println!("{:?}", cli.mode);
 }
 ```
+
+</details>
 
 ### 案例 4：env = 需要打开 cargo feature——E0599
 
@@ -872,6 +887,9 @@ error[E0599]: no method named `env` found for struct `Arg` in the current scope
 For more information about this error, try `rustc --explain E0599`.
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`#[arg(env = "...")]` 展开后调用的是 `Arg::env`，而这个方法被 cargo feature 门控：`clap = { version = "4", features = ["derive"] }` 只开了 `derive`，`env` 方法在编译期根本不存在，于是派生宏展开出的一行普通方法调用找不到目标。报错指向属性所在的行，是因为展开后的代码锚定在那里。
 
 **修复**：在依赖里补上 `env` feature。Rust 代码一行都不用改。
@@ -882,6 +900,8 @@ clap = { version = "4", features = ["derive", "env"] }
 ```
 
 改完依赖后，上面那段 `src/main.rs` 原样即可编译运行。
+
+</details>
 
 ### 案例 5：default_value_t 用在没有 Display 的类型上——E0277
 
@@ -914,6 +934,9 @@ error[E0277]: the trait bound `PathBuf: ToString` is not satisfied
 For more information about this error, try `rustc --explain E0277`.
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`default_value_t` 的语义是「把一个 Rust 值渲染成字符串塞进默认值」，因此要求类型实现 `Display`（经由 `ToString`），而 `PathBuf` 故意不实现 `Display`——路径不保证是合法 UTF-8。`String`、`u16`、枚举这类类型没有这个问题，所以错误通常在换成路径、字节串时才冒出来。
 
 **修复**：路径类默认值改用字面量形式的 `default_value`，它接收字符串并在解析时再转成 `PathBuf`。
@@ -934,6 +957,8 @@ fn main() {
     println!("{}", cli.file.display());
 }
 ```
+
+</details>
 
 ## 动手练习
 

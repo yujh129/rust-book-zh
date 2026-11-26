@@ -508,6 +508,9 @@ help: consider changing this to be mutable
   |         +++
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`*g += 1` 调用的是 `DerefMut::deref_mut`，它要求 `g` 本身可以被可变借用。`g` 是一个变量，变量要可变借用，绑定就得是 `mut`。这里的 `mut` 修饰的是**守卫这个绑定**，不是 `Mutex` 里的数据——数据在锁后面，由 `Mutex` 保证独占，跟绑定是否 `mut` 无关。
 
 **修复**：加 `mut`。
@@ -524,6 +527,8 @@ fn main() {
 ```
 
 一个容易混淆的点：`let m = Mutex::new(0);` 不需要 `mut`。`lock` 接收 `&self`，加锁本身就是"内部可变性"，不需要外层可变。
+
+</details>
 
 ### 案例 2：守卫不能跨线程——E0277
 
@@ -565,6 +570,9 @@ note: required because `g` is used within this closure
 ...
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`MutexGuard` 从 1.71 起被明确标记为 `!Send`（可以验证：`fn assert_send<T: Send>() {}` 加 `assert_send::<std::sync::MutexGuard<'static, i32>>()` 会报同样的错）。这背后是平台事实：有些系统的解锁必须由加锁的线程完成（pthread 的默认互斥量就是如此），守卫被移到另一个线程再析构，解锁线程就错了。标准库选择用类型系统把这个限制变成编译错误，而不是留给运行期。
 
 顺带一提，守卫是 `!Send` 但 `Mutex<T>` 在 `T: Send` 时是 `Send + Sync`——锁本身可以跨线程共享，锁的"持有权"不行。
@@ -596,6 +604,8 @@ fn main() {
 
 方案二就是 22.4 的经典模式。注意 `*m2.lock().unwrap() += 1;` 这一行：守卫是临时值，语句结束就释放，不需要显式 `drop`。
 
+</details>
+
 ### 案例 3：守卫被 move 走——E0382
 
 ```rust,editable
@@ -623,6 +633,9 @@ error[E0382]: borrow of moved value: `g`
     = note: borrow occurs due to deref coercion to `i32`
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`MutexGuard` 不是 `Copy`，赋值 `let h = g` 把守卫的所有权移走了。`println!("{}", *g)` 通过 `Deref` 借用 `g`，此时 `g` 已失效。编译器还贴心地指出，这次借用是"deref coercion"——因为 `println!` 需要 `&`，而 `*g` 先解引用再取引用。
 
 守卫为什么不能 `Copy`？因为它代表"锁被持有"这个独占状态，复制一份就等于两个守卫都认为自己负责解锁。
@@ -641,6 +654,8 @@ fn main() {
 ```
 
 如果确实想让两个作用域"先后"持有同一把锁，就在中间 `drop(g)`，别复制守卫。
+
+</details>
 
 ### 案例 4：借用冲突——E0502
 
@@ -668,6 +683,9 @@ error[E0502]: cannot borrow `g` as mutable because it is also borrowed as immuta
   |                         ----- immutable borrow later used here
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`first` 是 `&g[0]`，借的是 `Vec` 里的元素；`g.push(4)` 可能重新分配缓冲区，让 `first` 悬空，所以借用检查器禁止在不可变借用存活期间可变借用。这跟锁无关——同样的代码在 `Vec` 上直接写也会报 E0502。锁只是把"可变借用"变成了"通过守卫的可变借用"，规则一个字没改。
 
 **修复**：把需要的值复制出来，结束借用，再改容器。
@@ -685,6 +703,8 @@ fn main() {
 ```
 
 元素是 `i32` 时 `g[0]` 直接复制；元素是 `String` 时用 `g[0].clone()`，或者先算完再改。要"边读边改"，就得设计成两趟：第一趟只读收集结果，第二趟统一写。
+
+</details>
 
 ### 案例 5：中毒后的第二次 panic——运行期 PoisonError
 
@@ -728,6 +748,9 @@ called `Result::unwrap()` on an `Err` value: PoisonError { .. }
 
 进程以 101 退出。注意这是**两个** panic：第一个是业务代码主动 panic，第二个是主线程 `unwrap` 了中毒的 `lock()`。
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：工作线程在持有守卫时 panic，栈展开会析构守卫；`Mutex` 在解锁时发现"这次解锁发生在 panic 展开过程中"，就把自己标记为 poisoned。之后任何 `lock()` 都返回 `Err(PoisonError)`，`unwrap` 把它变成第二个 panic。
 
 poison 的用意：`Mutex` 保护的经常是"几个字段必须一起改"的不变量，持锁 panic 意味着改到一半，数据可能处于半成品状态；默认让后来者看到错误，比让它默默读到坏数据安全。
@@ -769,6 +792,8 @@ fn main() {
 程序退出码变成 0，但第一个 panic 的消息仍会打印在 stderr——panic 本身没有被吞掉，`join` 返回的 `Err` 里还带着它。
 
 反过来，如果数据的不变量很重要（账户余额、索引结构），正确做法是让错误继续传播，或者整体重建。`Mutex::clear_poison`（1.77 起）可以显式清除标记，但它只该在你**确认数据完好**之后调用，不是消除警告的开关。
+
+</details>
 
 ## 动手练习
 

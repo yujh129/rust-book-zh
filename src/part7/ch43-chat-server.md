@@ -796,6 +796,9 @@ For more information about this error, try `rustc --explain E0308`.
 error: could not compile `chat-server` (bin "e1") due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：broadcast 的 recv 有三种结局：收到一条、落后了、频道关闭。后两种必须能被区分，所以它返回 Result，Err 里恰好是 Lagged 和 Closed 两种。mpsc 的 recv 只可能「有」或「没了」，所以用 Option。把两套 API 混着记，就会写出 while let Some。
 
 **修复**：三种结局分别处理，Lagged 不能只是忽略：
@@ -823,6 +826,8 @@ async fn main() {
 ```
 
 这也是本章最终没用 broadcast 的一个附带理由：它把「有损」写进了返回值，你每写一个接收端都得处理一次。hub 模型里这个决定被集中到一处，也就是那个 dropped 计数。
+
+</details>
 
 ### 案例 2：广播时把 String 移动进了循环——E0382
 
@@ -868,6 +873,9 @@ For more information about this error, try `rustc --explain E0382`.
 error: could not compile `chat-server` (bin "e2") due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：String 不实现 Copy，try_send 按值取走所有权。第一轮循环把 line 移进队列之后，第二轮就没有 line 可移了。编译器给的 help 直接把补丁写好：line.clone()。但要注意 clone 的代价：每个接收者一份完整拷贝，人数乘长度，房间一大就是明显的分配开销。
 
 **修复**：两条路。消息短、人数少，直接 clone 最简单；消息会被很多人收到，就用 Arc 让所有人共享同一份：
@@ -889,6 +897,8 @@ fn broadcast(clients: &[Client], line: Arc<str>) {
 ```
 
 Arc::clone 只加一次原子计数，消息内容全程只有一份。本章的 Hub 用了 String 加 clone，因为聊天消息只有几十字节、房间只有几十人；真要做万人房间，第一件事就是把出站类型换成 `Arc<str>`，这一改动会波及 Cmd、Client 和写 task 三处，正好是练习 5。
+
+</details>
 
 ### 案例 3：lines() 找不到方法——E0599
 
@@ -927,6 +937,9 @@ For more information about this error, try `rustc --explain E0599`.
 error: could not compile `chat-server` (bin "e3") due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：lines 不是 BufReader 的固有方法，而是 AsyncBufReadExt 这个扩展 trait 提供的方法。Rust 的方法解析只查找已引入作用域的 trait，所以 use tokio::io::BufReader 让你能构造类型，却不让你调用它的 trait 方法。报错里那句 the method is available here 加 help 已经把补丁写好了，照抄那一行 use 即可。
 
 **修复**：把扩展 trait 一起引入。它和 BufReader 在同一个模块下，合成一条 use 就行：
@@ -946,6 +959,8 @@ async fn main() {
 ```
 
 注意顺手把 unwrap 换成了 while let Ok(Some(..))：服务器关掉时 next_line 会返回 Err，unwrap 会让客户端 panic 着退出，而这里只该安静地结束循环。
+
+</details>
 
 ### 案例 4：跨 await 持有 std MutexGuard——future 不是 Send
 
@@ -996,6 +1011,9 @@ note: required by a bound in `tokio::spawn`
 error: could not compile `chat-server` (bin "e4") due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：这条没有错误码，因为它是 trait 约束不满足，属于 E0277 那个家族。std 的 MutexGuard 不是 Send：它绑定在「加锁的那个线程」上，跨线程释放是非法的。多线程 runtime 会把 task 在线程之间搬运，所以一旦 future 在 await 时还持有 guard，编译器就拒绝把它交给 spawn。error 下面那三行 note 已经精确指出了是哪个值、跨了哪个 await。
 
 **修复**：把锁的作用域缩到 await 之前，先把要用的数据拷出来，guard 在块结束时自动释放：
@@ -1027,6 +1045,8 @@ async fn main() {
 ```
 
 另一条路是换成 tokio::sync::Mutex 再 await 它的 lock，但那样临界区里就可以有 IO，锁会被一个慢 socket 长时间占住，通常比拷贝更糟。本章干脆不用锁：房间状态只归 hub 一个 task 所有，这条错误从根上不会出现。
+
+</details>
 
 ### 案例 5：遍历 HashMap 的同时插入——E0502
 
@@ -1085,6 +1105,9 @@ For more information about this error, try `rustc --explain E0502`.
 error: could not compile `chat-server` (bin "e5") due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：for 循环拿着 clients 的不可变借用，循环体里又要可变借用同一张表。这不是编译器挑剔：插入可能触发扩容，扩容会搬动元素，正在迭代的引用立刻悬空，所以借用规则在这里挡住的是一个真实的内存安全问题。注意它和「先取一个引用、再插入」不同——那种写法靠两阶段借用能过，真正会报错的是「迭代器还活着的时候改容器」。
 
 **修复**：先把要用的东西收集出来，结束借用，再统一写入：
@@ -1104,6 +1127,8 @@ fn add_bot(clients: &mut HashMap<u64, Client>) {
 ```
 
 collect 这一步就把借用结束了，后面的循环拿的是自有数据。这个模式在 hub 里也会用到：任何「根据表里的内容决定怎么改表」的操作，都先收集，再修改。
+
+</details>
 
 ## 完整源码
 

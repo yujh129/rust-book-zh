@@ -518,6 +518,9 @@ help: specify the associated type
   |                             +++++++++++++++++
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：trait 对象要为每个具体类型生成 vtable，而 vtable 里函数指针的签名依赖关联类型的具体取值。`dyn Repo<String>` 没说 `Id` 是什么，编译器就不知道 `get` 的参数该按 `u64` 还是 `String` 生成，于是拒绝构造这张表。注意报错落在**类型标注**上，而不是调用点。
 
 **修复**：在 `dyn` 的类型参数里用 `关联类型名 = 具体类型` 补齐：
@@ -546,6 +549,8 @@ fn main() {
     println!("{}", total(&m));
 }
 ```
+
+</details>
 
 ### 案例 2：实现里用错关联类型的名字——E0220
 
@@ -577,6 +582,9 @@ error[E0220]: associated type `Key` not found for `Self`
    |                             ^^^ help: `Self` has the following associated type: `Id`
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`Self::Key` 是一次关联类型投影，编译器要在 `impl` 里找名为 `Key` 的关联类型。这个 impl 只定义了 `type Id`，而 `Repo` 也只声明了 `Id`，所以 `Key` 既不在 trait 里也不在实现里。这种情况常出现在把 `Id`、`Key`、`Item` 几个名字混用的重构之后。
 
 **修复**：把 `Self::Key` 改成 `Self::Id`。编译器在 `help` 里已经列出了当前可用的关联类型，照着改即可：
@@ -602,6 +610,8 @@ fn main() {
     println!("{:?}", Memory.get(1));
 }
 ```
+
+</details>
 
 ### 案例 3：只实现了关联类型，方法没写——E0046
 
@@ -634,6 +644,9 @@ error[E0046]: not all trait items implemented, missing: `get`, `len`
   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ missing `get`, `len` in implementation
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`impl` 块只填了 `type Id`。关联类型不是"可选的补充"，它和方法一样是 trait 的成员；只要 trait 里没有默认实现，impl 就必须全部给出。编译器会把缺的成员列在第一个 `error` 行里，这个列表通常就是你要补的清单。
 
 **修复**：补上 `get` 和 `len`：
@@ -661,6 +674,8 @@ fn main() {
     println!("{}", Memory.len());
 }
 ```
+
+</details>
 
 ### 案例 4：实现的方法签名和 trait 不一致——E0053
 
@@ -696,6 +711,9 @@ note: type in trait
    |                       ^^^
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：impl 里的方法必须和 trait 声明**逐字匹配**：参数类型、返回类型、接收者形式、泛型参数数量都要一致。这里 `u32` 和 `f64` 在 Rust 里没有隐式转换，编译器不会替你插入 `as f64`，于是直接判定签名不符。
 
 **修复**：把返回类型改成 `f64`，转换放在函数体里：
@@ -719,6 +737,8 @@ fn main() {
     println!("{}", Square { side: 2.0 }.area());
 }
 ```
+
+</details>
 
 ### 案例 5：blanket impl 和具体实现打架——E0119
 
@@ -755,6 +775,9 @@ error[E0119]: conflicting implementations of trait `Label` for type `String`
    | ^^^^^^^^^^^^^^^^^^^^^ conflicting implementation for `String`
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`String` 实现了 `Display`，所以它已经落进第一个 blanket impl 的覆盖范围。再写一个专门给 `String` 的 impl，就出现同一个 (trait, 类型) 的两份实现，违反一致性。编译器只能拒绝，而且拒绝得对：它无法判断你想用哪一份。
 
 **修复**：两者只能留一个。放弃定制、保留 blanket：
@@ -777,6 +800,8 @@ fn main() {
 ```
 
 如果 `String` 的行为必须不同于其它类型，就删掉 blanket impl，给每种类型写具体实现，或者给 `String` 套一个 newtype 再为 newtype 实现 `Label`。
+
+</details>
 
 ## 动手练习
 

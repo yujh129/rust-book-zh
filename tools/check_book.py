@@ -75,6 +75,8 @@ def check(path):
         for case in cases:
             if '**原因**' not in case or '**修复**' not in case:
                 issues.append('missing reason or fix in ' + case.splitlines()[0])
+            if '<details class="case-answer">' not in case:
+                issues.append('answers not collapsed in ' + case.splitlines()[0])
     return n, issues
 
 

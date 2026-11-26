@@ -652,6 +652,9 @@ error[E0277]: the trait bound `fn(Json<Payload>, Path<u32>) -> _ {update}: Handl
     = note: Consider using `#[axum::debug_handler]` to improve the error message
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`Json` 实现的是 `FromRequest`，它把整个请求拿走；`Path` 实现的是 `FromRequestParts`，需要在 body 被消费前借用 `Parts`。顺序反过来，axum 就没有为这个参数组合实现 `Handler`。
 
 **修复**：把消费 body 的提取器放到最后，其余随意调换：
@@ -661,6 +664,8 @@ async fn update(path: Path<u32>, body: Json<Payload>) -> String {
     format!("{} {}", path.0, body.name)
 }
 ```
+
+</details>
 
 ### 案例 2：状态类型忘了 Clone——E0277
 
@@ -705,6 +710,9 @@ help: consider annotating `AppState` with `#[derive(Clone)]`
     |
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`Router<S>` 的每个方法都要求 `S: Clone + Send + Sync + 'static`。上面其实先报了一条「Handler 未实现」，那条是假象；真正卡住的是 `AppState` 没有 `Clone`。
 
 **修复**：给状态加 `#[derive(Clone)]`。若字段不便宜，把内部换成 `Arc`，让克隆只增加引用计数。
@@ -715,6 +723,8 @@ struct AppState {
     hits: u64,
 }
 ```
+
+</details>
 
 ### 案例 3：with_state 的类型和 handler 对不上——E0308
 
@@ -763,6 +773,9 @@ help: call `Into::into` on this expression to convert `AppState` into `Arc<AppSt
     |                                         +++++++
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`with_state` 的参数类型由 handler 的 `State<T>` 反推出来，两边必须完全一致。`AppState` 和 `Arc<AppState>` 是两个不同的类型。
 
 **修复**：注入时包一层 `Arc::new`，或者按编译器建议调用 `.into()`：
@@ -772,6 +785,8 @@ let app = Router::new()
     .route("/count", get(count))
     .with_state(Arc::new(AppState { hits: 0 }));
 ```
+
+</details>
 
 ### 案例 4：`MutexGuard` 被带过了 `await`——E0277
 
@@ -814,6 +829,9 @@ note: required by a bound in `axum::routing::get`
 
 For more information about this error, try `rustc --explain E0277`.
 ```
+
+<details class="case-answer">
+<summary>查看答案</summary>
 
 **原因**：axum 的 `Handler` 要求 handler 返回的 future 实现 `Send`，因为一个连接可能被调度到不同的工作线程。`std::sync::MutexGuard` 不是 `Send`，而它在 `await` 之后还要用，于是整个 future 不是 `Send`，`handler` 也就不满足 `Handler`。axum 的泛型约束只报出「Handler 没实现」，真正的原因被藏在 trait 求解里。把同一个 handler 交给一个显式要求 `Send` 的函数，就能看到底层报错：
 
@@ -879,6 +897,8 @@ async fn handler() -> String {
 
 `#[axum::debug_handler]` 能把这类错误的报错信息提升到「哪个参数/哪一步导致 future 不是 Send」，需要额外打开 axum 的 `macros` feature；不开也没关系，记住「先看 `-->` 指向哪一行，再把同一段代码交给 `require_send`」这个排查套路就够了。
 
+</details>
+
 ### 案例 5：自定义错误没实现 `IntoResponse`——E0277
 
 `Result<T, E>` 作为返回值可以让 `?` 顺畅传播，但 axum 只认得实现了 `IntoResponse` 的 `E`：
@@ -923,6 +943,9 @@ note: required by a bound in `require_into_response`
 For more information about this error, try `rustc --explain E0277`.
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`(StatusCode, R)`、`Json<T>`、`String` 这些类型都实现了 `IntoResponse`，而自己定义的 `MyErr` 只是一个普通结构体。错误提示里那句「the following other types implement trait IntoResponse」列出的，正是 axum 内置的转换形式。
 
 **修复**：给错误类型实现 `IntoResponse`，把「内部错误长什么样」的决定权留在类型自己手里：
@@ -950,6 +973,8 @@ impl IntoResponse for MyErr {
 ```
 
 团队里更常见的做法是让库层错误实现 `std::error::Error`（或派生 `thiserror::Error`），在边界层用 `impl From<MyErr> for ApiError` 统一映射成状态码与 JSON；handler 里就可以一路 `?`，由 `ApiError` 的 `IntoResponse` 决定最终响应。
+
+</details>
 
 ## 动手练习
 

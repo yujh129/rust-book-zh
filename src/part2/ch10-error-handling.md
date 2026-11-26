@@ -576,6 +576,9 @@ note: `MyError` needs to implement `From<ParseIntError>`
   = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`?` 在返回 `Result<_, MyError>` 的函数里，要求 `MyError: From<ParseIntError>`。`MyError` 没有这个 `impl`，编译器不会替你猜错误该怎么表示；`#[derive(Debug)]` 只满足别的约束，与 `From` 无关。
 
 **修复**：补上 `From` 实现，`?` 就会自动调用它：
@@ -596,6 +599,8 @@ fn main() -> Result<(), MyError> {
     Ok(())
 }
 ```
+
+</details>
 
 ### 案例 2：Ok 分支忘了包 Ok——E0308
 
@@ -627,6 +632,9 @@ error[E0308]: mismatched types
           found unit type `()`
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`if` 分支的最后一句是 `println!`，它的值是 `()`；`else` 分支里是 `return`，不参与求值。于是整个 `if/else` 求出 `()`，与签名要求的 `Result<i32, String>` 不符。`println!` 返回 `()` 这件事，是新手最常踩的坑之一。
 
 **修复**：让 `Ok(n)` 成为 `if` 分支的值，同时把 `else` 里的 `return Err(...)` 改成表达式：
@@ -646,6 +654,8 @@ fn main() {
     println!("{:?}", check(-1));
 }
 ```
+
+</details>
 
 ### 案例 3：把错误取出来后原值不能再用——E0382
 
@@ -676,6 +686,9 @@ help: consider calling `.as_ref()` to borrow the value's contents
   |                       +++++++++
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`Result::err` 的签名是 `fn err(self) -> Option<E>`，按值接收 `self`，调用它就把 `result` 整个移动走了。后面再用就是使用已移动的值。`String` 没有 `Copy`，编译器不会悄悄复制一份。
 
 **修复**：借而不是搬——在 `&result` 上做 `if let Err(e)`：
@@ -689,6 +702,8 @@ fn main() {
     println!("{:?}", result);
 }
 ```
+
+</details>
 
 ### 案例 4：在 Result 上调用 ok_or——E0599
 
@@ -708,6 +723,9 @@ error[E0599]: no method named `ok_or` found for enum `Result<T, E>` in the curre
   |                        ^^^^^ method not found in `Result<u16, ParseIntError>`
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`ok_or` 定义在 `Option` 上，作用是把"没有值"变成"有错误"。`Result` 已经是"要么值要么错误"，没有这个动作，所以方法表里找不到它。
 
 **修复**：`Result` 上对应的是 `map_err`，用来替换错误一侧的类型：
@@ -719,6 +737,8 @@ fn main() {
     println!("{:?}", value);
 }
 ```
+
+</details>
 
 ### 案例 5：match 漏掉 Err 分支——E0004
 
@@ -749,6 +769,9 @@ help: ensure that all possible cases are being handled by adding a match arm wit
   |
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`match` 必须穷尽所有变体。这里只写了 `Ok(n)`，漏掉 `Err(_)`，而 `Result` 只有这两个变体。编译器不会假设"这个 `parse` 一定成功"。
 
 **修复**：补上 `Err` 分支，把标准库错误转成签名里的 `String`：
@@ -766,6 +789,8 @@ fn main() {
     println!("{:?}", parse("x"));
 }
 ```
+
+</details>
 
 ## 动手练习
 

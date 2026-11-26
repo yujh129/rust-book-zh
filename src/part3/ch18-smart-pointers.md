@@ -700,6 +700,9 @@ help: insert some indirection (e.g., a `Box`, `Rc`, or `&`) to break the cycle
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`List` 的大小 = `i32` + `List` 的大小 + 判别式，递归定义导致编译器无法算出有限大小。rustc 的 help 甚至直接给出了 `Box<List>` 这个补丁。
 
 **修复**：插入一层间接（`Box` 或 `Rc`），把"值"变成"指针"：
@@ -716,6 +719,8 @@ fn main() {
     println!("{:?}", l);
 }
 ```
+
+</details>
 
 ### 案例 2：试图修改 `Rc` 里的数据——E0594
 
@@ -741,6 +746,9 @@ error[E0594]: cannot assign to data in an `Rc`
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`Rc<T>` 只实现 `Deref`，不实现 `DerefMut`。编译器用 `E0594`（而不是借用检查的 `E0596`）表达"这个类型根本不支持可变解引用"。
 
 **修复**：用 `RefCell` 把可变性放进内部；或者如果只有一个所有者，改用 `Box`：
@@ -755,6 +763,8 @@ fn main() {
     println!("{}", x.borrow());
 }
 ```
+
+</details>
 
 ### 案例 3：把 `Rc` 送进另一个线程——E0277
 
@@ -790,6 +800,9 @@ note: required because `d` is used within this closure
 note: required by a bound in `spawn`
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`thread::spawn` 要求闭包 `F: Send + 'static`。`Rc` 的计数非原子，若允许跨线程，两个线程同时 clone 会导致计数错乱、双重释放。因此 `Rc<T>` 没有 `Send`。
 
 **修复**：跨线程用 `Arc<T>`：
@@ -808,6 +821,8 @@ fn main() {
 ```
 
 如果还需要修改，用 `Arc<Mutex<Vec<i32>>>`。
+
+</details>
 
 ### 案例 4：从 `Rc` 里移出数据——E0507
 
@@ -841,6 +856,9 @@ help: consider cloning the value if the performance cost is acceptable
 
 error: aborting due to 1 previous error
 ```
+
+<details class="case-answer">
+<summary>查看答案</summary>
 
 **原因**：`*s` 得到的是 `String` 类型的位置，但 `Rc` 只是**借用**式地解引用——数据可能还有其他所有者，不可能把它 move 走。`Rc` 永远不实现"可移动解引用"。
 
@@ -876,6 +894,8 @@ fn main() {
 }
 ```
 
+</details>
+
 ### 案例 5：`RefCell` 同时借用与可变借用——运行期 panic
 
 ```rust,editable
@@ -894,6 +914,9 @@ thread 'main' panicked at src/main.rs:6:15:
 RefCell already borrowed
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 ```
+
+<details class="case-answer">
+<summary>查看答案</summary>
 
 **原因**：这段代码**编译完全通过**——`RefCell` 的借用检查在运行期。`borrow()` 返回 `Ref` 守卫并标记"有共享借用"，此时 `borrow_mut()` 检测到冲突，直接 panic。注意它不是 UB：panic 是安全的失败方式。
 
@@ -922,6 +945,8 @@ fn main() {
 ```
 
 生产代码里，`RefCell` 的 panic 常常出现在"借用期间调用了会再借用的方法"——比如在 `for item in list.borrow()` 循环体里调用 `list.borrow_mut()`。
+
+</details>
 
 ## 动手练习
 

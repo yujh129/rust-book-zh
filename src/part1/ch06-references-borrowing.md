@@ -420,8 +420,13 @@ error[E0502]: cannot borrow `data` as mutable because it is also borrowed as imm
   |               ----- immutable borrow later used here
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`push` 可能导致堆内存重新分配，`first` 会变成悬垂指针。
 **修复**：先取出值再改——`let first = data[0];`（`i32` 是 `Copy`，直接复制）。
+
+</details>
 
 ### 案例 2：两个独占借用
 
@@ -447,8 +452,13 @@ error[E0499]: cannot borrow `s` as mutable more than once at a time
   |     - first borrow later used here
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：独占引用必须唯一，否则两个 `&mut` 可能同时修改同一块内存，破坏一致性。
 **修复**：让第一个借用结束再借第二个（把 `a.push` 挪到 `let b` 前），或者用 `split_at_mut`。
+
+</details>
 
 ### 案例 3：对不可变变量取可变借用
 
@@ -470,8 +480,13 @@ error[E0596]: cannot borrow `s` as mutable, as it is not declared as mutable
   |             ^^^^^^ cannot borrow as mutable
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：能不能借用可变，首先取决于所有者自己是否可变。
 **修复**：`let mut s = ...`。注意：**`mut` 是变量的性质，不是类型的性质**——`&mut T` 类型本身保证被指向的值可变，但被借的那一方得先允许。
+
+</details>
 
 ### 案例 4：临时值在语句结束时被释放
 
@@ -500,8 +515,13 @@ help: consider using a `let` binding to create a longer lived value
 7 |     let s = longest("abc", &t);
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`&String::from("de")` 里的 `String` 是临时值，语句结束就被 drop，而 `s` 还想指向它。
 **修复**：给临时值一个名字。这类错误在链式调用、`if let` 里也很常见。
+
+</details>
 
 ### 案例 5：结构体里存引用却没有生命周期
 
@@ -529,8 +549,13 @@ help: consider introducing a named lifetime parameter
 2 |     input: &'a str,
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：结构体存引用时，必须说明"这个引用和哪个东西活得一样久"。
 **修复**：`struct Parser<'a> { input: &'a str }`，使用时 `Parser { input: "abc" }`。如果觉得生命周期标注太吵，考虑存 `String`（拥有所有权）——第 17 章会讨论这个取舍。
+
+</details>
 
 ## 动手练习
 

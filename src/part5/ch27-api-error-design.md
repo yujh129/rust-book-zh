@@ -593,6 +593,9 @@ note: `LoadError` needs to implement `From<String>`
 ...
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`?` 只看类型，通过 `From` 转换。`String` 不是错误类型，`LoadError` 也没有实现 `From<String>`。更根本的问题是 `format!` 已经把 `io::Error` 的类型和 `source` 销毁了，即使补一个 `From<String>`，也只能得到一个没有原因的字符串。
 
 **修复**：不要在中途字符串化，让变体携带路径和原始错误：
@@ -608,6 +611,8 @@ enum LoadError {
 ```
 
 `Display` 打印路径，`source` 返回 `io::Error`，诊断链完整。
+
+</details>
 
 ### 案例 2：没实现 Display 就调用 to_string——E0599
 
@@ -638,6 +643,9 @@ error[E0599]: `ConfigError` doesn't implement `std::fmt::Display`
 ...
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`ToString` 对一切 `T: Display` 自动实现，所以调用 `to_string` 等价于要求 `ConfigError: Display`。只写了 `#[derive(Debug)]` 不满足这个条件。编译器不会提示"实现 Display"，而是报"方法找不到"，因为 trait 方法必须 trait 在作用域内且类型满足约束。
 
 **修复**：实现 `Display`，`ToString` 自动就有了，不要手写：
@@ -651,6 +659,8 @@ impl std::fmt::Display for ConfigError {
 
 impl std::error::Error for ConfigError {}
 ```
+
+</details>
 
 ### 案例 3：Err 分支塞了另一种错误——E0308
 
@@ -684,6 +694,9 @@ error[E0308]: mismatched types
 help: the type constructed contains `std::io::Error` due to the type of the argument passed
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`return Err(e)` 是直接构造，`Err` 的类型由函数签名固定为 `ParseError`，不会调用 `From`。只有 `?` 才会隐式转换。这里少了一个能装 `io::Error` 的变体。
 
 **修复**：给枚举补上 `Io` 变体，显式包装：
@@ -698,6 +711,8 @@ return Err(ParseError::Io(std::io::Error::other("empty input")));
 ```
 
 如果写 `Err(std::io::Error::other(...).into())`，则要求 `ParseError: From<io::Error>`，同样得先补 `impl`。
+
+</details>
 
 ### 案例 4：`Box<dyn Error>` 不能跨线程——E0277
 
@@ -728,6 +743,9 @@ error[E0277]: `dyn std::error::Error` cannot be sent between threads safely
     = note: required by a bound in `spawn`
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`Box<dyn Error>` 只擦除了 `Error` 这一层，没有承诺背后的具体类型能安全地跨线程移动。`spawn` 的约束是 `T: Send + 'static`，而 `dyn Error` 不在 `Send` 的自动实现之列。
 
 **修复**：把约束写进 trait 对象类型：
@@ -738,6 +756,8 @@ fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
 ```
 
 标准库为所有 `E: Error + Send + Sync` 实现了到这种盒子的 `From`，所以 `?` 照常可用。
+
+</details>
 
 ### 案例 5：返回借用错误的引用——E0106
 
@@ -766,6 +786,9 @@ error[E0106]: missing lifetime specifier
 help: consider using the `'static` lifetime, but this is uncommon unless you're returning a borrowed value from a `const` or a `static`
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`&` 必须能回答"借用了谁、活多久"。这里的 `io::Error` 是函数内的临时值，函数返回时就被销毁，引用会悬空。编译器拒绝推断，要求显式生命周期。
 
 **修复**：返回拥有所有权的盒子，把错误移出函数：
@@ -777,6 +800,8 @@ fn last_error() -> Box<dyn Error> {
 ```
 
 只有错误本身是 `static` 时才适合返回 `&'static dyn Error`；一般情况下，返回 `Box<dyn Error>` 才是想要的语义。
+
+</details>
 
 ## 27.9 动手练习
 

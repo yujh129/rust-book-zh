@@ -836,6 +836,9 @@ note: function defined here
    |    ^^^^^^^^ -------------------
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`Request<Draft>` 与 `Request<Sent>` 是两个毫不相关的类型，`send` 的作用是消费旧值、返回新类型的值，它不会「原地修改」。这里跳过了 `send`，直接拿草稿去调用只接受已发送请求的函数，编译器只能判定类型不匹配。报错落在实参上而不是方法调用上，也是这个原因：`send` 本身没有问题，问题是没有调用它。
 
 **修复**：先完成状态迁移，拿到 `Request<Sent>` 再传：
@@ -870,6 +873,8 @@ fn main() {
     log_sent(&sent);
 }
 ```
+
+</details>
 
 ### 案例 2：`PhantomData` 把类型标成了不可发送——E0277
 
@@ -924,6 +929,9 @@ note: required because it appears within the type `Handle<u8>`
 note: required because `h` is used within this closure
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`Handle<T>` 里没有裸指针字段，但 `PhantomData<*const T>` 让它继承了裸指针的自动 trait：既不 `Send` 也不 `Sync`。`thread::spawn` 要求闭包 `Send`，闭包又捕获了 `h`，于是整条链被拒绝。注意闭包体是 `h.show()`——方法调用需要整个 `h`，编译器因此捕获整个 `h`；如果闭包写成 `println!("{}", h.id)`，2021 版的不相交字段捕获只会捕获 `id: u64`，这段代码会静默通过。同一个类型，换个写法就绕过了标记，这是自查时容易漏掉的地方。
 
 **修复**：想清楚标记是「有意为之」还是「误用」。如果句柄必须留在原线程，就不要把它移进 `spawn`；如果确实要共享，就用真正的所有权容器，并把访问限制在锁内：
@@ -947,6 +955,8 @@ fn main() {
     println!("{}", handle.lock().unwrap().id);
 }
 ```
+
+</details>
 
 ### 案例 3：impl 里的类型参数没人约束——E0207
 
@@ -985,6 +995,9 @@ error[E0282]: type annotations needed
    |                    ^^^^^^ cannot infer type for type parameter `T`
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`T` 只出现在 `impl` 的头部，既没有被 trait 使用，也没有出现在 self 类型 `Config` 或任何 where 谓词里。这样的 impl 会同时覆盖无限多个 `T`，但每个 `T` 的实现内容又完全相同，编译器无法为调用点选定一个。它先拒绝 impl 本身，再在调用处连带报 E0282：`Config::describe()` 里的 `T` 无从推断。修 typestate 或泛型代码时，这种残留参数很常见——把状态参数从结构体上删掉了，却忘了删 impl 上的。
 
 **修复**：如果 `T` 没有语义，直接删掉：
@@ -1008,6 +1021,8 @@ fn main() {
 ```
 
 如果 `T` 确实要区分行为，就把它放到能被约束的位置：写进 trait（`trait Described<T>`）、写进 self 类型（`impl<T> Described for Config<T>`），或者用 `PhantomData` 让它成为类型的一部分（见 36.2）。
+
+</details>
 
 ### 案例 4：两条 blanket impl 撞车——E0119
 
@@ -1046,6 +1061,9 @@ error[E0119]: conflicting implementations of trait `Render`
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ conflicting implementation
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：两条实现的 self 类型都是裸 `T`，只要一个类型同时实现 `Display` 与 `Debug`，两个 impl 就都适用，违反「每个 (trait, 类型) 至多一个实现」的一致性承诺。编译器不做否定推理：它不会因为「目前恰好没有这种类型」而放行，因为在别的 crate 里随时可能冒出一个同时实现两者的类型。冲突在 impl 定义处就报，而不是等到调用。
 
 **修复**：只保留一条 blanket，把定制能力让给别的机制：
@@ -1069,6 +1087,8 @@ fn main() {
 ```
 
 如果两种渲染都必须存在，就拆成两个 trait（`RenderDisplay` 与 `RenderDebug`），或者保留一个 trait、把「用哪种格式」变成带约束的方法参数。需要按类型特化时，nightly 的 specialization 是另一条路，但它至今没有稳定。
+
+</details>
 
 ### 案例 5：`impl Trait` 返回让 trait 失去 dyn 兼容——E0038
 
@@ -1110,6 +1130,9 @@ note: for a trait to be dyn compatible it needs to allow building a vtable
    |                          ^^^^^^^^^^^^^^^^^^^^^^^^^ ...because method `numbers` references an `impl Trait` type in its return type
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：RPITIT 的返回类型由每个实现各自决定，`Fixed` 返回的是 `Copied<Iter<'_, u32>>`，另一个实现可以返回完全不同的类型。虚表需要为方法记录一个确定的返回类型和大小，多个实现返回不同类型时这张表就建不起来，于是 trait 不再 dyn 兼容。这条限制和 36.6 的结论互为表里：能写 `impl Trait` 返回的 trait，通常就不能当 `dyn` 用。
 
 **修复**：如果调用方只需要静态分派，把 `&dyn Numbers` 改成 `&impl Numbers`：
@@ -1137,6 +1160,8 @@ fn main() {
 ```
 
 如果必须保留 `dyn`，就把返回类型擦成 `Box<dyn Iterator<Item = u32> + '_>`，用一次堆分配换运行期多态。还有一种写法是把返回类型提升成关联类型（GAT），适合同时想要零分配和对象安全之外的抽象的场景，代价是实现方要显式命名迭代器类型。
+
+</details>
 
 ## 动手练习
 

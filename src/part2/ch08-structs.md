@@ -533,6 +533,9 @@ error[E0063]: missing field `y` in initializer of `Point`
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：结构体字面量必须给出**全部**字段。Rust 没有"字段默认值"，也没有可选字段语法。
 
 **修复**：补上字段，或者实现 `Default` 后用 `..Default::default()` 让其余字段取默认值：
@@ -549,6 +552,8 @@ fn main() {
     println!("{} {}", p.x, p.y);
 }
 ```
+
+</details>
 
 ### 案例 2：字段名拼错——E0560
 
@@ -576,9 +581,14 @@ error[E0560]: struct `Point` has no field named `z`
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：字面量里出现了定义中没有的字段名。`note: all struct fields are already assigned` 这句话说明编译器已经识别出"该有的都有了，多出来一个"。
 
 **修复**：删掉多余的字段，或者检查是不是该给结构体加这个字段。
+
+</details>
 
 ### 案例 3：想改字段但绑定不可变——E0596
 
@@ -615,9 +625,14 @@ help: consider changing this to be mutable
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`incr(&mut self)` 需要一个可变借用，而 `c` 是 `let` 绑定的不可变变量。**错误发生在调用点，不是定义点**——所以初学者常常去改 `impl`，改不对。
 
 **修复**：把绑定改成 `let mut c`。如果这个值在多个地方共享，就不能简单加 `mut`，得考虑 `Cell`/`RefCell`（第 19 章）或者重新设计接口。
+
+</details>
 
 ### 案例 4：方法里想返回字段却没交出所有权——E0507
 
@@ -653,6 +668,9 @@ help: consider cloning the value if the performance cost is acceptable
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`&self` 只是借用，借来的东西不能"搬走"。`String` 不是 `Copy`，所以 `self.name` 这个表达式想移动所有权，编译器不允许。
 
 **修复**：三种合法写法，按场景选：
@@ -683,6 +701,8 @@ fn main() {
     println!("{}", u.into_name());
 }
 ```
+
+</details>
 
 ### 案例 5：`{:?}` 但没有 `Debug`——E0277
 
@@ -717,9 +737,14 @@ help: consider annotating `Point` with `#[derive(Debug)]`
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`{:?}` 需要 `Debug` trait，而结构体默认不实现任何 trait。Rust 的原则是"不替你猜语义"，连打印格式都要显式声明。
 
 **修复**：在定义上方加 `#[derive(Debug)]`。注意 `{}`（Display）**不能** derive，需要手写 `impl std::fmt::Display`——因为 Display 面向用户，格式属于业务决策。
+
+</details>
 
 ## 动手练习
 

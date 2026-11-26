@@ -499,6 +499,9 @@ error: aborting due to 1 previous error
 For more information about this error, try `rustc --explain E0308`.
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：宏没有类型签名，$e:expr 接受任何表达式，所以错误不会在宏调用处被拦下，只能等展开结果参与类型检查时才暴露。报错指向第 8 行的调用点，而不是宏定义，因为不匹配的是展开结果与返回类型。
 
 **修复**：问题在调用方，不在宏。要么改返回类型，要么传一个整数。宏本身无法声明「只接受 i32」，想限制类型只能靠宏体里的额外约束，或者干脆换成函数。
@@ -518,6 +521,8 @@ fn main() {
     println!("{}", answer());
 }
 ```
+
+</details>
 
 ### 案例 2：调用时多给了一个参数——no rules expected
 
@@ -553,6 +558,9 @@ note: while trying to match meta-variable `$x:expr`
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：规则只描述了一个表达式，之后的逗号与 2 没有规则能消费。宏匹配是整体匹配，不会「尽量匹配、丢弃剩余」；多出来的 token 会直接报错。note 一行指出了卡在哪个元变量上，这是排查这类错误最快的线索。
 
 **修复**：补一条双参数规则。规则按书写顺序尝试，短规则写在前面不会抢走双参数的调用，因为 expr 片段遇到逗号就停下，整条规则匹配失败后编译器会继续试下一条。
@@ -573,6 +581,8 @@ fn main() {
     println!("{:?} {:?}", p, q);
 }
 ```
+
+</details>
 
 ### 案例 3：调用时少给了一个参数——unexpected end of macro invocation
 
@@ -608,6 +618,9 @@ note: while trying to match `,`
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：模式需要一个逗号再接第二个表达式，但 token 流提前结束，连逗号都没有，所以报的是「宏调用意外结束」，不是「找不到值」。它和案例 2 是一对：一个嫌多，一个嫌少。同样，报错里的 note 精确指出缺的是哪个 token。
 
 **修复**：宏没有默认参数，想允许少给就必须单独写一条规则。下面给单参数版本补上默认值。
@@ -628,6 +641,8 @@ fn main() {
     println!("{:?} {:?}", p, q);
 }
 ```
+
+</details>
 
 ### 案例 4：宏体里的名字在调用点不存在——E0425
 
@@ -667,6 +682,9 @@ error: aborting due to 1 previous error
 For more information about this error, try `rustc --explain E0425`.
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：卫生性在起作用。宏体里的 x 属于宏定义处的语法上下文，调用点的 let x 虽然同名，但对它不可见。编译器甚至专门给了一句提示：有一个同名标识符，但被宏卫生性挡住。这不是 bug，而是宏不会意外捕获调用点变量的保证。
 
 **修复**：需要调用点的值时，通过参数传进去，而不是在宏体里直接引用名字。参数是 token，传什么就展开成什么。
@@ -683,6 +701,8 @@ fn main() {
     println!("{}", double!(x));
 }
 ```
+
+</details>
 
 ### 案例 5：递归宏没有终止条件——recursion limit
 
@@ -715,6 +735,9 @@ error: recursion limit reached while expanding `countdown!`
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：宏参数是 token，不是值。$n - 1 只是把 3 - 1 这串 token 原样交给下一层，再下一层得到 3 - 1 - 1，永远算不出 2。递归要能停下来，每一层都必须让 token 变少，而不是让数值变小。help 建议调高 recursion_limit，那只会让爆炸来得晚一些。
 
 **修复**：数值递减交给运行时；如果确实要递归展开，就用 tt 逐个吃掉 token，像 33.5 节的 depth! 那样保证每层都在缩短输入。
@@ -735,6 +758,8 @@ fn main() {
     countdown!(3);
 }
 ```
+
+</details>
 
 ## 动手练习
 

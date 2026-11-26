@@ -319,3 +319,50 @@ code {
   max-height: 70vh;
   overflow-y: auto;
 }
+
+/* ── 案例答案折叠面板 ─────────────────────────────────────────────
+   chapters 的每个「典型错误案例」都把原因与修复放进 <details class="case-answer">，
+   默认收起，点「查看答案」展开。样式跟随各套配色（只用主题变量）。 */
+details.case-answer {
+  margin: 0.9rem 0 1.7rem;
+  border: 1px solid var(--table-border-color);
+  border-radius: 6px;
+  background: var(--table-alternate-bg);
+}
+details.case-answer > summary {
+  cursor: pointer;
+  padding: 0.45rem 0.8rem;
+  font-size: 1.35rem;
+  color: var(--links);
+  list-style: none;
+  user-select: none;
+}
+details.case-answer > summary::-webkit-details-marker {
+  display: none;
+}
+details.case-answer > summary::before {
+  content: "▸ ";
+}
+details.case-answer[open] > summary {
+  border-bottom: 1px solid var(--table-border-color);
+}
+details.case-answer[open] > summary::before {
+  content: "▾ ";
+}
+details.case-answer > summary:hover {
+  text-decoration: underline;
+}
+details.case-answer > p,
+details.case-answer > ul,
+details.case-answer > ol,
+details.case-answer > pre {
+  margin: 0.8rem 0.9rem;
+}
+details.case-answer > p:last-child {
+  margin-bottom: 1rem;
+}
+@media print {
+  details.case-answer {
+    break-inside: avoid;
+  }
+}

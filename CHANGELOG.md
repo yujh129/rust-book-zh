@@ -16,6 +16,8 @@
 - 各章末尾新增「## 完整源码」小节：文件职责表、真实运行输出、测试数量，并注明「正文与源码不一致时以 `projects/` 为准」。
 - 新增 `tools/check_projects.py`：一条命令构建并测试六个工程（`--offline` 可在无网络时用）。
 - 新增 [`CHANGELOG.md`](CHANGELOG.md) 与 `CONTRIBUTING` 说明之外的发布流程记录。
+- **案例答案默认收起**：每章 5 个「典型错误案例」的原因与修复包进 `<details class="case-answer">` 面板，
+  先自己判断错在哪，再点「查看答案」展开对照；打印或导出 PDF 时自动展开。全库 220 个案例面板。
 
 ### 修正
 
@@ -40,6 +42,7 @@
 - **启动时后台预热依赖**，浏览器等待上限从 6 秒放宽到 3 分钟，左下角胶囊会提示「正在预编译依赖」，
   第一次点 Run 不再白等。
 - **只监听本机**：非本机 `Host`/`Origin` 一律 403，非 JSON 请求 415。
+- **折叠面板适配编辑器与打印**：面板展开后自动让内部 Ace 编辑器重新排版；打印前临时展开全部答案。
 
 ### 校验
 
@@ -48,6 +51,7 @@
 | 章节结构、必备小节、链接、每章五案例 | `python tools/check_book.py` | 50 页，0 处问题 |
 | 正文普通代码块逐块编译 | `python tools/verify_blocks.py src` | 436 块，0 失败 |
 | 错误案例报错与正文逐字比对 | `python tools/verify_cases.py` | 313 块：174 逐字对上、129 正常运行、10 预期运行期失败、0 不一致 |
+| 案例答案面板完整 | `python tools/check_book.py`（每条案例必须含 `<details class="case-answer">`） | 220 个面板，0 缺失 |
 | 六个项目工程构建并测试 | `python tools/check_projects.py --offline` | 6 个工程，42 个测试全过 |
 | 整书构建 | `mdbook build` | 零警告 |
 

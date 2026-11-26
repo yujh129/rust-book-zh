@@ -467,6 +467,9 @@ error[E0502]: cannot borrow `v` as mutable because it is also borrowed as immuta
   = help: consider using an index-based loop instead, or collecting modifications into a separate collection
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`for x in &v` 展开成 `IntoIterator::into_iter(&v)`，迭代器在整个循环期间持有 `v` 的共享借用。`v.push(4)` 需要可变借用，两者不能共存。更深一层的原因是 `push` 可能扩容并搬移元素，迭代器内部的指针会失效，编译器必须在类型层面拒绝这种写法。
 
 **修复**：改成索引循环，让循环变量是一个独立的 `usize`，不再借用容器；或者把要追加的元素先收集到另一个 `Vec`，循环结束后再 `extend`。
@@ -487,6 +490,8 @@ fn main() {
     println!("{:?}", v);
 }
 ```
+
+</details>
 
 ### 案例 2：for 循环消费了 Vec——E0382
 
@@ -519,6 +524,9 @@ help: consider iterating over a slice of the `Vec<String>`'s content to avoid mo
     |              +
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`for s in v` 调用 `v.into_iter()`，这个方法接收 `self`，把整个 `Vec<String>` 按值移进迭代器，每个 `String` 也随所有权一起交给循环变量。循环结束后 `v` 已经被消耗，再调用 `len()` 就是使用已移动的值。`Vec<String>` 没有实现 `Copy`，编译器不会自动复制。
 
 **修复**：只需要读取时用 `&v`，循环变量类型变成 `&String`；确实需要拥有每个元素时，允许 `v` 被消费，循环后不要再使用它。
@@ -535,6 +543,8 @@ fn main() {
     println!("总字节数 = {}", total);
 }
 ```
+
+</details>
 
 ### 案例 3：在 HashMap 上调用 push——E0599
 
@@ -562,6 +572,9 @@ help: you might have meant to use `insert`
   |
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`push` 是序列类型的方法，含义是「在尾部追加一个元素」；HashMap 没有尾部，也没有元素顺序，它的写入方法叫 `insert`，语义是「键存在则覆盖，不存在则插入」。E0599 表示当前类型上找不到这个方法，编译器据此给出了改名建议。
 
 **修复**：改用 `insert`。如果只想在键不存在时写入，用 `entry(key).or_insert(value)`，避免覆盖已有值。
@@ -579,6 +592,8 @@ fn main() {
     println!("{:?}", map.get("b"));
 }
 ```
+
+</details>
 
 ### 案例 4：从 Vec 索引里移出值——E0507
 
@@ -607,6 +622,9 @@ help: consider cloning the value if the performance cost is acceptable
   |                     ++++++++
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`Vec<T>` 的 `Index<usize>` 返回 `&T`，`v[0]` 只是 `*v.index(0)` 的语法糖。把解引用得到的 `String` 直接赋给新变量，等于从一个借用后面把值搬走；`String` 管理堆内存，不允许按位复制，编译器因此拒绝。如果元素是 `i32` 这类 `Copy` 类型，这里会自动复制，不会报错，所以这个错误常常在把 `Vec<i32>` 改成 `Vec<String>` 之后突然出现。
 
 **修复**：只读时加 `&`；需要独立的字符串时 `clone`；确实要取出所有权时用 `remove(i)` 或 `into_iter()`，两者都会真正移动元素。
@@ -627,6 +645,8 @@ fn main() {
     println!("剩余 {:?}", v2);
 }
 ```
+
+</details>
 
 ### 案例 5：用整数索引 String——E0277
 
@@ -649,6 +669,9 @@ error[E0277]: the type `str` cannot be indexed by `{integer}`
     = note: you can use `.chars().nth()` or `.bytes().nth()`
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`String` 通过 `Deref` 把索引操作转发给 `str`，而 `str` 只实现了 `Index<Range<usize>>` 这类范围索引，没有实现 `Index<usize>`。UTF-8 是变长编码，第 n 个字符的起始字节位置无法用一次乘法算出；如果允许 `s[0]` 返回第 0 个字符，这次索引就必须是 O(n)，与「索引是 O(1)」的直觉冲突。语言选择不提供整数索引，只提供按字节范围切片，并在运行时检查边界。
 
 **修复**：按字符取用 `chars().nth(n)`（O(n)），需要重复按序号访问时先收集成 `Vec<char>`；按字节取用 `as_bytes()`。如果目标只是首字符，`chars().next()` 更直接。
@@ -667,6 +690,8 @@ fn main() {
     println!("第三个字符 = {:?}", chars.get(2));
 }
 ```
+
+</details>
 
 ## 动手练习
 

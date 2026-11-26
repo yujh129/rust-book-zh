@@ -519,6 +519,9 @@ error[E0382]: borrow of moved value: `name`
   |                    ^^^^ value borrowed here after move
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**
 
 `move` 在**创建闭包的那一刻**就把 `name` 的所有权搬进了闭包结构体，不是等到调用才搬。所以第 5 行报错不是因为 `greet()` 执行过——把第 4 行删掉，错误一模一样。闭包体只是 `println!`，它其实只需要一个 `&String`，是 `move` 强行升级成了按值捕获。
@@ -537,6 +540,8 @@ fn main() {
 ```
 
 如果闭包确实要离开当前作用域（返回出去、交给 `thread::spawn`），那就得两份数据：先 `clone` 一份搬进闭包，原变量留给外面用。
+
+</details>
 
 ### 案例 2：map 里把捕获的 String 搬走——E0507
 
@@ -571,6 +576,9 @@ error[E0507]: cannot move out of `name`, a captured variable in an `FnMut` closu
 help: `Fn` and `FnMut` closures require captured values to be able to be consumed multiple times, but `FnOnce` closures may consume them only once
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**
 
 `map` 的签名要求 `F: FnMut(Self::Item) -> B`。`FnMut` 意味着"可以被调用任意多次"，而闭包体把 `name` 返回出去，等于每次调用都要搬走一次所有权——第二次调用时 `name` 已经空了。编译器因此把闭包降级成 `FnOnce`（只能调一次），与 `map` 的要求冲突，E0507 就是这么来的。
@@ -593,6 +601,8 @@ fn main() {
 ```
 
 不过 `map(|_| x)` 这个形状本身值得怀疑：它对每个元素都返回同一个东西，通常说明想用的是 `vec![x; n]` 或 `std::iter::repeat(x).take(n)`。真需要"消耗型"闭包时，用 `for_each` 之类的 `FnMut` 之外的接口，或者干脆写 `for` 循环。
+
+</details>
 
 ### 案例 3：collect 的元素类型对不上——E0277
 
@@ -626,6 +636,9 @@ note: the method call chain might not have had the expected associated types
      |                              ^^^^^^ `Iterator::Item` is `&{integer}` here
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**
 
 `collect` 只能把 `Item` 塞进目标容器。`v.iter()` 的 `Item` 是 `&i32`，`Vec<String>` 只接受 `String`，中间缺一次转换。这个错误链里三段 note 很有用：第一段说明 `Item` 到底是谁，第二段说明 `collect` 的约束从哪来。
@@ -643,6 +656,8 @@ fn main() {
 ```
 
 注意这里 `x` 是 `&i32`，`to_string` 通过自动解引用直接可用。另一种写法是 `v.into_iter()` 拿 `i32` 再 `to_string`，但那样 `v` 就被搬走了。
+
+</details>
 
 ### 案例 4：在 &str 上调 iter——E0599
 
@@ -672,6 +687,9 @@ help: because of the in-memory representation of `&str`, to obtain an `Iterator`
   |
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**
 
 `iter` 是切片的固有方法，`&str` 上没有。字符串和 `Vec<T>` 长得像，但 `&str` 是 UTF-8 字节序列，不是 `[char]`，所以没法像数组那样按"元素"索引——按字节切会切坏多字节字符。Rust 给它的入口是 `chars`（按码点）、`bytes`（按字节）、`split_whitespace` / `split`（按分隔符）。
@@ -689,6 +707,8 @@ fn main() {
 ```
 
 需要按字节处理（比如写二进制协议）就用 `bytes`；需要人眼可见的字符就用 `chars`。两者长度不同——`"你好"` 是 2 个 `char`、6 个 `u8`。
+
+</details>
 
 ### 案例 5：if 两个分支返回不同适配器——E0308
 
@@ -730,6 +750,9 @@ error[E0308]: `if` and `else` have incompatible types
   |
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**
 
 这是 13.5 那套"每个适配器是一个结构体"的直接后果。`map` 返回 `Map<...>`，`filter` 返回 `Filter<...>`，两个分支的表达式类型不同，`if` 表达式就无从确定类型。而且就算两个分支都写 `map`，只要闭包不同，两个匿名闭包类型也不同——错误信息里 `{closure@e5.rs:5:22: 5:25}` 那个位置标记就是在告诉你"这是两个不同的类型"。
@@ -755,6 +778,8 @@ fn main() {
 ```
 
 代价是每个元素多一次虚表调用，而且挡住了内联（13.5 讲过）。如果两个分支本来就该各自 `collect`，让两边都产出 `Vec<i32>` 即可，`Box` 都不需要——判据是：**分支的结果马上要被消费，就在分支内消费掉；后面还要继续接适配器，才需要 `Box<dyn Iterator>`**。
+
+</details>
 
 ## 动手练习
 

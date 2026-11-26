@@ -376,6 +376,9 @@ error[E0308]: `if` and `else` have incompatible types
   | |_____- `if` and `else` have incompatible types
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：if 是表达式，两个分支必须给出同一个类型的值。then 分支的尾表达式是 `n * 2`（i32），else 分支的尾表达式是一次 println! 调用（()），编译器拿它们互相比较，只能报类型不符。注意报错用的是"expected integer, found ()"而不是"分支不一致"，因为它先固定了第一个分支的类型。
 
 **修复**：先想清楚这段是"算一个值"还是"做一件事"。要算值，两个分支都得给 i32，打印挪到 if 外面：
@@ -387,6 +390,8 @@ fn main() {
     println!("{doubled}");
 }
 ```
+
+</details>
 
 ### 案例 2：尾表达式多了分号
 
@@ -412,6 +417,9 @@ error[E0308]: mismatched types
   |          - help: remove this semicolon to return this value
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：分号把表达式变成语句，函数体的值就退化成 ()。这是全章最高频的一个错误，几乎每个从 C/Java 转过来的人都踩过——在那些语言里 `return` 是必需的，末尾加不加分号无所谓；Rust 把"最后一句"本身当成返回值。
 
 **修复**：删掉分号。rustc 的 help 行已经直接说了。如果函数体不止一行，也可以写 `return x * 2;`，语义相同，但多行分支里用尾表达式更主流。
@@ -425,6 +433,8 @@ fn main() {
     println!("{}", double(3));
 }
 ```
+
+</details>
 
 ### 案例 3：调用了一个不存在的函数
 
@@ -443,6 +453,9 @@ error[E0425]: cannot find function `add` in this scope
   |                 ^^^ not found in this scope
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：名字没绑到任何函数上。常见来源有三个：忘了定义；定义在别的模块里但没 use；把方法当自由函数调用（`3.add(4)` 是 trait 方法，不能写成 `add(3, 4)`）。注意 Rust 不要求函数定义在使用之前，所以"顺序问题"不在其中。
 
 **修复**：补上定义，或把路径写全。用了标准库函数忘了 use 时，编译器通常会给"consider importing"的建议。
@@ -457,6 +470,8 @@ fn main() {
     println!("{total}");
 }
 ```
+
+</details>
 
 ### 案例 4：参数个数不对
 
@@ -484,6 +499,9 @@ note: function defined here
   |    ^^^^         ------
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：Rust 没有默认参数，也没有重载，所以参数个数必须精确对上。note 行指回定义处，^- 标记直接标出缺的是第几个参数、什么类型。
 
 **修复**：把参数补全。确实需要"可省略"的参数时，用 Option 显式表达，或者再写一个包装函数（`fn square(s: u32) -> u32 { area(s, s) }`）：
@@ -497,6 +515,8 @@ fn main() {
     println!("{}", area(3, 4));
 }
 ```
+
+</details>
 
 ### 案例 5：丢弃 must_use 的返回值，后面还写了不可达代码
 
@@ -553,6 +573,9 @@ help: use `let _ = ...` to ignore the resulting value
 error: aborting due to 2 previous errors
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`#[must_use]` 告诉编译器"这个返回值不能默默丢掉"，因为丢掉通常意味着逻辑漏了一步——`Result` 没处理、锁没释放、字节数没累加。默认级别下它只是警告，编译能过、程序照跑，这正是危险之处。第二条是另一个问题：第 14 行的 return 让后面的 println! 永远执行不到，rustc 的 unreachable_code 检查会指出来。示例里用 `#![deny(...)]` 把两条都升级成错误，方便一次看全。这两条都属于 lint（代码检查），不是类型错误，所以 rustc 不给 E 编号——只有类型、借用、名字解析这类硬错误才有 E 码。
 
 **修复**：要么用掉返回值，要么明确表示"我知道我在丢弃"。顺手删掉不可达的语句。
@@ -572,6 +595,8 @@ fn main() {
 ```
 
 CI 里常见的做法是加 `RUSTFLAGS="-D warnings"`，把全项目的警告一律升级为错误；本地开发时保留警告即可，但不要养成无视它的习惯。
+
+</details>
 
 ## 动手练习
 

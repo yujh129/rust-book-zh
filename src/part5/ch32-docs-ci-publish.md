@@ -734,6 +734,9 @@ error: aborting due to 1 previous error
 Couldn't compile the test.
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：doctest 被编译成一个独立 crate，链接的是 **lib 目标**，名字由 `[lib] name` 决定，这里是 `wordtools`。`rename_demo` 只是包名，在代码里不是一个可导入的 crate。编译器看不出你的意图，于是按常规给出"用 cargo add 加上它"的建议——方向正好相反。
 
 **修复**：把 `use` 改成库名。这也解释了为什么给库改名（`[lib] name`）是一次破坏性变更：所有下游的 `use` 都要跟着改。
@@ -755,6 +758,8 @@ fn main() {
     println!("{}", add(2, 3));
 }
 ```
+
+</details>
 
 ### 案例 2：文档示例引用了没声明的 crate——E0463
 
@@ -794,6 +799,9 @@ test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; 
 error: doctest failed, to rerun pass `--doc`
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：doctest 的编译环境就是这个 crate 的依赖环境，`Cargo.toml` 里没写 `rand`，编译时自然找不到。常见的来源是抄了一段别处的示例、或者把示例当成了"文档，不用管"。注意报错发生在编译阶段，比断言失败更早，也更值得优先修——它意味着读者复制这段示例必然失败。
 
 **修复**：要么真的加上依赖，要么把示例改成只依赖标准库。给一个需要联网或大依赖的示例，加 `no_run` 也无法绕开"crate 必须存在"，只能加依赖或改写。
@@ -818,6 +826,8 @@ fn main() {
     println!("{}", pseudo_byte(42));
 }
 ```
+
+</details>
 
 ### 案例 3：文档测试断言失败——doctest failed
 
@@ -855,6 +865,9 @@ test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; 
 error: doctest failed, to rerun pass `--doc`
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：代码编译通过，运行时断言失败。`left` 是实际值 4，`right` 是期望值 5，两者矛盾。这里的价值正在于示例和实现都是"真的"：示例写错、实现写错、或者两者对同一个 API 的理解不一致，都会在这里爆出来。注意 panic 位置 `src/lib.rs:3:1` 指向的是源文件里文档块附近，不是生成代码的行号，照着附近看就行。
 
 **修复**：确认哪边才是对的。`2 + 2` 是 4，所以改断言；如果实现错了，就改实现。
@@ -876,6 +889,8 @@ fn main() {
 }
 ```
 
+</details>
+
 ### 案例 4：依赖版本写成浮点数——manifest 解析失败
 
 ```toml
@@ -896,6 +911,9 @@ error: invalid type: floating point `1.0`, expected a version string like "0.9.8
   |         ^^^
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：TOML 把 `1.0` 解析成浮点数，而 cargo 要的是版本字符串。`"1.0"` 和 `1.0` 在 TOML 里是两种类型，加不加引号决定了它是字符串还是 f64。同一个坑还有更狠的版本：`version = 0.1.0` 会得到 `error: invalid float, expected nothing`，因为 TOML 不接受两个小数点。这类错误发生在解析清单阶段，编译都还没开始。
 
 **修复**：所有版本号都加引号。
@@ -909,6 +927,8 @@ edition = "2021"
 [dependencies]
 serde = "1.0"
 ```
+
+</details>
 
 ### 案例 5：工作区有未提交改动——cargo package 拒绝
 
@@ -933,6 +953,9 @@ src/lib.rs
 to proceed despite this and include the uncommitted changes, pass the `--allow-dirty` flag
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`cargo package`（以及内部调用它的 `cargo publish`）默认检查待打包文件是否有未提交的改动，这样 `.crate` 与 tag 指向的代码一一对应。工作区有改动时它拒绝继续，并列出涉及的文件。上面那条 `warning` 是另一件事：清单里缺 `repository` 之类的元数据，crates.io 页面会显得很空，但不阻止打包。
 
 **修复**：先提交，再打包。真要在脏工作区验证打包结果，加 `--allow-dirty`；正式发布不要加这个参数，否则网上那个版本可能对应不到任何一次提交。
@@ -943,6 +966,8 @@ git commit -m "docs: 补 README 说明"
 cargo package --list
 cargo publish --dry-run
 ```
+
+</details>
 
 ## 动手练习
 

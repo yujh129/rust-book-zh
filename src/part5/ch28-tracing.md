@@ -909,6 +909,9 @@ help: the trait `Value` is not implemented for `Order`
   = note: required for the cast from `&Order` to `&dyn Value`
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：简写字段 `info!(order, ...)` 等价于把这个值按原样交给订阅者，要求 `&Order` 能转成 `&dyn Value`。`Value` 只为基础类型和少数包装类型实现，自定义结构体不在其中。
 
 **修复**：加 `?` 用 `Debug`，或加 `%` 用 `Display`；只想记其中几个字段就逐个取出来。下面三种都能编译：
@@ -930,6 +933,8 @@ fn main() {
 }
 ```
 
+</details>
+
 ### 案例 2：`.entered()` 不是 `Span`——E0308
 
 ```rust,editable
@@ -948,6 +953,9 @@ error[E0308]: mismatched types
   |                expected due to this
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`enter()` 返回借用型守卫 `Entered<'_>`，`entered()` 返回拥有所有权的守卫 `EnteredSpan`，两者都不是 `Span`。类型标注写成 `tracing::Span` 就把「守卫」和「span 句柄」搞混了。
 
 **修复**：守卫交给编译器推导即可；`Span` 要长期保存时用 `clone` 或者 `.instrument()`。
@@ -961,6 +969,8 @@ fn main() {
     drop(owned);
 }
 ```
+
+</details>
 
 ### 案例 3：`with` 找不到——E0599
 
@@ -992,6 +1002,9 @@ help: trait `SubscriberExt` which provides `with` is implemented but not in scop
   |
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`with` 不是 `Registry` 的固有方法，而是扩展 trait `SubscriberExt` 提供的组合方法；trait 不在作用域里，方法就不可见。这是 Rust 里「方法来自 trait」的常见表现，报错信息本身已经给出了提示。
 
 **修复**：导入对应的 trait。日常写代码时直接导入 `prelude` 更省事：
@@ -1007,6 +1020,8 @@ fn main() {
     subscriber.init();
 }
 ```
+
+</details>
 
 ### 案例 4：future 被移动后又使用——E0382
 
@@ -1033,6 +1048,9 @@ error[E0382]: use of moved value: `fut`
   |     ^^^ value used here after move
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`.instrument(span)` 的签名是 `fn instrument(self, span: Span) -> Instrumented<Self>`，它按值取得 future，返回一个新的、被 span 包裹的 future。第 6 行把包装结果丢掉了，原来那个 `fut` 也已经不存在了。
 
 **修复**：用返回值，把 `.instrument()` 接在 `.await` 前面：
@@ -1048,6 +1066,8 @@ async fn main() {
     fut.await;
 }
 ```
+
+</details>
 
 ### 案例 5：全局订阅者装了两次——运行期 panic
 
@@ -1065,6 +1085,9 @@ thread 'main' (4032) panicked at src/main.rs:5:48:
 called `Result::unwrap()` on an `Err` value: SetGlobalDefaultError("a global default trace dispatcher has already been set")
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 ```
+
+<details class="case-answer">
+<summary>查看答案</summary>
 
 **原因**：全局默认订阅者全进程只能设置一次，第二次调用必然返回 `Err(SetGlobalDefaultError)`。这段代码能编译，问题只在运行期出现，所以用 `unwrap` 会直接 panic。`init()` 内部同样会 panic（它把 `Err` 换成了带提示的 `expect`）。
 
@@ -1084,6 +1107,8 @@ fn scope() {
     });
 }
 ```
+
+</details>
 
 ## 动手练习
 

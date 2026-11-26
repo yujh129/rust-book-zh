@@ -478,8 +478,13 @@ error[E0308]: mismatched types
 help: consider specifying the actual array length
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：N 是类型的一部分，`[i32; 2]` 与 `[i32; 3]` 是两个不同的类型。赋值处检查的是类型相等，所以报的是"类型不匹配"，而不是"长度检查失败"。
 **修复**：把标注改成 `[i32; 2]`，或把元素补到三个。函数返回 `[i32; 3]` 却 `return [0; 2]` 时报的是同一个 E0308。
+
+</details>
 
 ### 案例 2：常量下标越界，编译期就被拦下
 
@@ -500,8 +505,13 @@ error: this operation will panic at runtime
   = note: `#[deny(unconditional_panic)]` on by default
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：下标是字面量，数组长度也已知，常量传播（const propagation）算出这次索引必然越界，触发默认 deny 的 `unconditional_panic` lint。注意它没有 E 编号，是 lint 而不是类型错误。下标来自运行期数据时，同一处代码会编译通过，改为运行期 panic。
 **修复**：换成合法下标；下标是否越界取决于输入时，用 `a.get(i)` 返回 `Option` 并在 `None` 分支里处理。
+
+</details>
 
 ### 案例 3：用方括号索引元组
 
@@ -520,8 +530,13 @@ error[E0608]: cannot index into a value of type `(i32, i32)`
   |                     ^^^ help: to access tuple element `0`, use: `.0`
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：元组每个位置的类型可以不同，无法用运行期下标计算偏移，所以索引只接受 `.0` 这种字面量写法。数组的 `[]` 依赖 `Index` trait，元组没有实现它。
 **修复**：写 `t.0`、`t.1`；确实要按下标循环，先把同类型元素转成数组或 `Vec`。
+
+</details>
 
 ### 案例 4：两个字面量直接用 + 拼接
 
@@ -542,8 +557,13 @@ error[E0369]: cannot add `&str` to `&str`
   = note: string concatenation requires an owned `String` on the left
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`+` 是 `Add` trait 的语法糖，标准库只为 `String` 实现了 `Add<&str>`，没有 `&str + &str`。拼接必须产生一块新缓冲，而 `&str` 不拥有任何缓冲，没人能承担这块内存。
 **修复**：左边先变成 `String`，如 `"hello ".to_owned() + "world"` 或 `String::from("hello ") + "world"`；或者直接用 `format!("{a}{b}")`。
+
+</details>
 
 ### 案例 5：String 传给 &str 参数，忘了 &
 
@@ -571,8 +591,13 @@ help: consider borrowing here
   |           +
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`String` 与 `&str` 是不同的类型。deref coercion 只在已经有引用时生效：`&String` 能自动变成 `&str`，但 `String` 本身不会自动被借用——Rust 不做隐式借用，否则所有权转移会变得难以推断。
 **修复**：写 `greet(&s)`。参数收 `&str` 是对的：字面量、`&String`、`String` 的引用都能传，调用方不必克隆。
+
+</details>
 
 ## 动手练习
 

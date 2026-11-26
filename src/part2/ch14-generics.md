@@ -447,6 +447,9 @@ help: consider restricting type parameter `T` with trait `PartialOrd`
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：函数签名只声明了 `<T>`，意味着 `T` 可以是任何类型，包括不支持比较的类型。Rust 在**定义处**就检查函数体，不会等你调用时才报错。rustc 的 help 已经给出了答案。
 
 **修复**：加 `PartialOrd` bound。注意 `&` 的问题——`item` 是 `&T`，`max` 也是 `&T`，比较的是两个引用，`T: PartialOrd` 之后 `&T` 也能比较（标准库为 `&T` 实现了 `PartialOrd`）。
@@ -467,6 +470,8 @@ fn main() {
     println!("{}", largest(&v));
 }
 ```
+
+</details>
 
 ### 案例 2：泛型值无法推断——E0282
 
@@ -496,6 +501,9 @@ help: consider giving `x` an explicit type
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`make::<T>` 的返回类型由调用方决定，而 `let x = ...` 没有给出任何线索，`println!` 也不需要特定类型（任何 `Display` 都行）。编译器无法从上下文推出 `T`。
 
 **修复**：标注类型或用 turbofish：
@@ -511,6 +519,8 @@ fn main() {
     println!("{} {}", x, y);
 }
 ```
+
+</details>
 
 ### 案例 3：对泛型 T 调用不存在的方法——E0599
 
@@ -540,6 +550,9 @@ help: the following trait defines an item `len`, perhaps you need to restrict ty
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`T` 没有 bound，编译器不知道它有什么方法。这条规则看起来苛刻，其实是在保护你：如果没有 bound 也能调方法，那就回到了动态类型的运行期报错。
 
 **修复**：想接受"任何有 `len` 的东西"，最通用的是 `T: AsRef<[U]> + ?Sized`，但更简单的做法是**直接接受切片**：
@@ -557,6 +570,8 @@ fn main() {
 ```
 
 注意 rustc 建议的 `ExactSizeIterator` 不是最佳答案——它只是"恰好也定义了 `len`"的 trait 之一。这类 help 有时会给出误导性的候选，判断依据还是要回到"我真正想约束什么"。
+
+</details>
 
 ### 案例 4：`impl` 上漏了类型参数——E0425 + E0107
 
@@ -597,6 +612,9 @@ note: struct defined here, with 1 generic parameter: `T`
   |        ^^^^^^^^^
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`impl` 块有自己的类型参数列表，它**不会**从结构体定义里自动继承。所以 `impl Wrapper` 里的 `T` 未定义，同时 `Wrapper` 缺少参数。
 
 **修复**：写成 `impl<T> Wrapper<T>`：
@@ -619,6 +637,8 @@ fn main() {
 ```
 
 顺带一提：如果只想给 `Wrapper<i32>` 加方法，写 `impl Wrapper<i32>`（不带 `<T>`），这时不需要类型参数，因为没有泛型变量要声明。
+
+</details>
 
 ### 案例 5：bound 不满足——E0277
 
@@ -650,6 +670,9 @@ note: required by a bound in `print_it`
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`Vec<T>` 没有实现 `Display`（因为"怎么显示一个向量"没有唯一答案：`[1, 2, 3]`？`1 2 3`？）。它实现的是 `Debug`。
 
 **修复**：换成 `Debug` bound，或者传一个已经 `Display` 的值：
@@ -664,6 +687,8 @@ fn main() {
     print_it("普通字符串也实现了 Debug");
 }
 ```
+
+</details>
 
 ## 动手练习
 

@@ -493,6 +493,9 @@ note: required because `counter` is used within this closure
     |                    ^^^^^^^
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：闭包按引用捕获 `counter`，闭包要满足 `Send`，于是 `&Cell<i32>` 也必须 `Send`。而 `&T: Send` 的前提是 `T: Sync`，`Cell<i32>` 没有实现 `Sync`，链条就断在这里。编译器甚至直接给了替代品：`AtomicI32` 或 `RwLock`。
 
 **修复**：计数用原子类型。原子操作在硬件层面保证不撕裂，所以 `AtomicUsize` 是 `Sync`，连 `&AtomicUsize` 都能随便共享。
@@ -512,6 +515,8 @@ fn main() {
 ```
 
 输出是 `2`。注意闭包不再需要 `move`：`&AtomicUsize` 本身就可以安全共享。
+
+</details>
 
 ### 案例 2：遍历借用还没结束就申请独占借用——运行期 panic
 
@@ -539,6 +544,9 @@ RefCell already borrowed
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`for` 循环里的迭代器持有 `Ref`，整个循环期间 `borrow` 计数是 1。循环体里的 `borrow_mut` 看到计数非零，直接 panic。即使没有 panic，往 `Vec` 里 push 也可能让迭代器持有的缓冲区失效，所以这条规则不是形式主义。
 
 **修复**：先把要改的内容收集出来，结束借用之后再一次性写入。
@@ -563,6 +571,8 @@ fn main() {
 
 输出 `[1, 2, 3, 11, 12]`。`collect` 结束时 `Ref` 已经释放，后面的 `borrow_mut` 才合法。这条"先读后写、两段分开"的模式能解决绝大多数 `RefCell` 借用冲突。
 
+</details>
+
 ### 案例 3：`OnceLock::set` 调用两次——第二次静默失败
 
 `set` 返回 `Result<(), T>`，不 panic，所以失败很容易被 `let _ =` 吞掉。
@@ -585,6 +595,9 @@ Err("prod")
 dev
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`OnceLock` 的语义是"第一次写入生效，之后永远只读"。第二次 `set` 失败时会把没能写进去的值原样还给你（这里是 `"prod"`），值并没有丢，但也不会覆盖。这种设计让运行期配置无法被偷偷改掉。
 
 **修复**：用 `get_or_init` 表达"没有就初始化，有就直接用"，把"只初始化一次"交给类型系统保证。
@@ -605,6 +618,8 @@ fn main() {
 ```
 
 两次调用都输出 `dev`。如果确实需要保留 `set` 的"重复设置要报警"语义，就把返回值用 `if let Err(existing) = CONFIG.set(v)` 接住并处理，别用 `let _ =` 丢掉。
+
+</details>
 
 ### 案例 4：`Arc<RefCell<T>>` 扔进线程池——E0277
 
@@ -655,6 +670,9 @@ note: required because `t` is used within this closure
     |              ^
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`Arc<T>` 把同一份数据交给多个线程，所以 `T` 必须是 `Sync`——否则两个线程可以同时拿到 `&RefCell<i32>`，同时读到借用计数 0，同时写入 1，然后各自拿到 `&mut i32`。这不是理论风险，只是被 `!Sync` 提前拦住了。
 
 **修复**：把 `RefCell` 换成 `Mutex`。锁保证同一时刻只有一个线程进入临界区，借用检查随之变成加锁与解锁。
@@ -682,6 +700,8 @@ fn main() {
 ```
 
 输出 `4`。`MutexGuard` 在语句结束时释放锁，多个线程依次累加。
+
+</details>
 
 ### 案例 5：没有 unsafe 就读写 `static mut`——E0133
 
@@ -714,6 +734,9 @@ error[E0133]: use of mutable static is unsafe and requires unsafe function or bl
   = note: mutable statics can be mutated by multiple threads: aliasing violations or data races will cause undefined behavior
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：读取和写入都算"使用可变静态"，各自要一个 `unsafe` 块。编译器把责任交给你：你得自己证明没有别的线程同时在碰它。而 edition 2024 把 `static_mut_refs` 提升为 deny，连 `&mut COUNTER` 这种引用都拿不到，靠 `unsafe` 也补不回来——这说明 `static mut` 在现代 Rust 里基本不该出现。
 
 **修复**：换成原子类型，读写都不需要 `unsafe`，也不会有数据竞争。
@@ -730,6 +753,8 @@ fn main() {
 ```
 
 输出 `1`。如果全局状态是一个结构体而不只是一个整数，用 `static CONFIG: OnceLock<Config>` 或 `static CACHE: Mutex<HashMap<u32, u32>>`，同样不需要 `unsafe`。
+
+</details>
 
 ## 动手练习
 

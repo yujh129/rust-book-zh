@@ -455,6 +455,9 @@ help: to force the closure to take ownership of `msg` (and any other referenced 
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`spawn` 的签名是 `fn spawn<F, T>(f: F) -> JoinHandle<T> where F: FnOnce() -> T + Send + 'static`。闭包默认按"能借就借"捕获，于是 `msg` 被借用，闭包带着 `&msg`——但线程可能活过栈帧，`'static` 约束因此被违反。
 
 **修复**：闭包前加 `move`，让闭包按值捕获：
@@ -472,6 +475,8 @@ fn main() {
 ```
 
 或者不用 `spawn` 而用 `thread::scope`（21.4），在作用域里借用是合法的。
+
+</details>
 
 ### 案例 2：move 之后再用原变量——E0382
 
@@ -508,6 +513,9 @@ error[E0382]: borrow of moved value: `v`
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`move` 把 `v` 的所有权整体转移到闭包里，主线程不能再碰它。这是所有权规则在线程边界的直接体现——如果两边都能改同一个 `Vec`，就出现了数据竞争（`Vec` 扩容时指针会重新分配，另一个线程可能读到悬垂指针）。
 
 **修复**：要么 clone 一份给线程，要么用 `Arc<Mutex<Vec<i32>>>` 真正共享：
@@ -530,6 +538,8 @@ fn main() {
     println!("{:?}", v.lock().unwrap());
 }
 ```
+
+</details>
 
 ### 案例 3：把局部变量的引用交给线程——E0597
 
@@ -568,6 +578,9 @@ error[E0597]: `s` does not live long enough
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`move` 移动的是 `slice`（一个 `&str`），但 `slice` 指向的 `s` 仍在 `main` 的栈上。线程活过 `main` 的栈帧，引用就悬垂了。
 
 **修复**：让线程拥有数据本身（`String` 而非 `&str`），或者用 `thread::scope`：
@@ -591,6 +604,8 @@ fn main() {
     });
 }
 ```
+
+</details>
 
 ### 案例 4：裸指针不能跨线程——E0277
 
@@ -624,6 +639,9 @@ note: required because `p` is used within this closure
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：裸指针没有所有权语义，编译器无法判断它指向的数据是否有效、是否被别名。`*const T` 和 `*mut T` 都**没有** `Send`/`Sync`。这是	extbf{有意的保守}：宁可拦住正确代码，也不放过数据竞争。
 
 **修复**：用安全的包装类型表达意图，例如把指针包进 `Arc`/`Box`，或者用 `usize` 传递地址（在 `unsafe` 块里再转回指针，并自己承担正确性）：
@@ -645,6 +663,8 @@ fn main() {
 ```
 
 如果确实需要跨线程共享裸指针（例如 FFI 回调），可以写一个 `struct SendPtr(*mut T); unsafe impl Send for SendPtr {}`，但必须自己保证生命周期与同步。
+
+</details>
 
 ### 案例 5：`Cell` 不是 `Sync`——E0277
 
@@ -679,6 +699,9 @@ note: required because `c` is used within this closure
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`Cell` 允许通过 `&` 修改内容（内部可变性），但它的读写没有任何同步。两个线程同时 `c.set()` 就是数据竞争（在 `Cell` 的语义里等于 UB）。所以 `Cell: Send` 但 `!Sync`，而这里两个闭包都借了 `&c`，需要 `&Cell: Send`，即 `Cell: Sync`。
 
 **修复**：按 rustc 的提示换成 `AtomicI32`（无锁、最轻量），或者 `Mutex<i32>`：
@@ -696,6 +719,8 @@ fn main() {
     println!("{}", c.load(Ordering::Relaxed));
 }
 ```
+
+</details>
 
 ## 动手练习
 

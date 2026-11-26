@@ -569,6 +569,9 @@ error[E0308]: mismatched types
   |                              ^^^^^^^^ expected `usize`, found `u32`
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`Vec::len` 返回 `usize`，而 `expected` 被标注成 `u32`。`assert_eq!` 要求两边能用同一个 `PartialEq` 实现比较，编译器不会在比较时做整数转换或类型提升。
 
 **修复**：把期望值的类型改成 `usize`。类型对齐之后，这条测试才真正在比较长度：
@@ -580,6 +583,8 @@ fn main() {
     assert_eq!(values.len(), expected);
 }
 ```
+
+</details>
 
 ### 案例 2：把测试写进 bin，却没有 main——E0601
 
@@ -600,6 +605,9 @@ error[E0601]: `main` function not found in crate `demo`
 
 （这段代码没有运行按钮：它没有 `main`，只有放进 `cargo new` 的项目里用 `cargo test` 才跑得起来。本地运行器对含 `#[test]` 的代码一律按 `cargo test` 编译，跑出来会直接报「测试通过」，看不到上面这条 E0601。）
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`#[test]` 不生成程序入口。入口是 `cargo test` 用 `--test` 编译时由 libtest 注入的，所以这份文件 `cargo test` 能跑过，`cargo build` 却找不到 `main`。把示例改写成测试时最容易踩到这条。
 
 **修复**：bin 里保留 `main`，测试作为附加内容存在；或者把逻辑移进 `src/lib.rs`，测试也放过去。
@@ -614,6 +622,8 @@ fn adds_two_numbers() {
     assert_eq!(2 + 2, 4);
 }
 ```
+
+</details>
 
 ### 案例 3：测试模块里找不到父模块的函数——E0425
 
@@ -644,6 +654,9 @@ help: consider importing this function
   |
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`mod tests` 是子模块，名字不会自动从父模块继承；`add` 定义在 crate 根，子模块里要先导入才能用。更隐蔽的是，`cargo build` 并不报这个错——整个模块被 `cfg(test)` 删掉了，只有 `cargo test` 才会编译它。
 
 **修复**：在 `mod tests` 开头写 `use super::*;`，或者按编译器建议写 `use crate::add;`：
@@ -667,6 +680,8 @@ mod tests {
     }
 }
 ```
+
+</details>
 
 ### 案例 4：断言失败——left 与 right 对不上
 
@@ -706,6 +721,9 @@ failures:
 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`add(2, 2)` 返回 4，断言写的期望值是 5。`assert_eq!` 把实际值放在 `left`、期望值放在 `right`，输出直接给出差值；命令的退出码是 101。
 
 **修复**：期望值改成 4，或者去修 `add` 的实现——先确认哪一边才是对的：
@@ -729,6 +747,8 @@ mod tests {
     }
 }
 ```
+
+</details>
 
 ### 案例 5：should_panic 却没 panic
 
@@ -761,6 +781,9 @@ note: test did not panic as expected at src/main.rs:11:8
 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`unwrap_or(0)` 把解析失败吞成了 0，函数根本不会 panic；测试却声明"它应当 panic"。`should_panic` 的通过条件是测试函数内确实发生了 panic，返回正常值同样算失败。
 
 **修复**：先明确契约。端口解析函数遇到非法输入应当 panic，就用 `expect` 并给出消息；测试同时补上 `expected`，让这个 panic 有明确原因：
@@ -785,6 +808,8 @@ mod tests {
     }
 }
 ```
+
+</details>
 
 ## 动手练习
 

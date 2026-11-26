@@ -525,6 +525,9 @@ error[E0382]: borrow of moved value: `v`
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：send 的签名是 fn send(&self, t: T)，参数按值接收，所以 v 的所有权被移动进通道。移动之后 v 在编译期就失效了，不能再用。
 
 **修复**：在发送前先用完，或者发送克隆：
@@ -540,6 +543,8 @@ fn main() {
     println!("通道里收到：{:?}", rx.recv().unwrap());
 }
 ```
+
+</details>
 
 ### 案例 2：发送的类型与通道的元素类型不一致
 
@@ -572,6 +577,9 @@ note: method defined here
   |     pub fn send(&self, t: T) -> Result<(), SendError<T>>
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`mpsc::channel::<i32>()` 把 `T` 固定成了 `i32`，`Sender<i32>::send` 只能收 `i32`。通道的元素类型在创建时就确定了，之后不能改。
 
 **修复**：统一类型。如果确实要发多种类型，用一个 enum 把它们包起来：
@@ -597,6 +605,8 @@ fn main() {
     }
 }
 ```
+
+</details>
 
 ### 案例 3：把 Vec 直接 println! 出来
 
@@ -624,6 +634,9 @@ error[E0277]: `Vec<i32>` doesn't implement `std::fmt::Display`
   = note: in format strings you may be able to use `{:?}` (or `{:#?}` for pretty-print) instead
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：Display 要求「只有一种人类可读的表示形式」。Vec 有多种合理表示（[1, 2, 3]　或换行列表），所以只实现了 Debug。这个错误与通道无关，是通道让 Vec 变成了打印对象才暴露出来。
 
 **修复**：用 {:?} 或 `{:#?}`，或者用 join 自己格式化：
@@ -635,6 +648,8 @@ fn main() {
     println!("{}", v.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(", "));
 }
 ```
+
+</details>
 
 ### 案例 4（运行期）：sync_channel(0) 双方互相等待
 
@@ -660,6 +675,9 @@ fn main() {
   主线程阻塞在 join 上等子线程。Ctrl+C 才能停。）
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：容量 0 意味着 send 必须与 recv 会合。这里 join 在 recv 之前，顺序反了，两个线程永远等不到对方。这类错误编译器帮不了你，只能靠理解语义。
 
 **修复**：先收再 join，或者给通道一个非零容量：
@@ -678,6 +696,8 @@ fn main() {
     h.join().unwrap();
 }
 ```
+
+</details>
 
 ### 案例 5（运行期）：忘记 drop 原始 Sender，for 循环永不结束
 
@@ -706,6 +726,9 @@ fn main() {
 （然后永远卡住：主线程自己还持有一个 Sender，通道永远不算关闭）
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：for v in rx 只在「缓冲空且所有 Sender 已 drop」时结束。原始的 tx 还在 main 的作用域里活着，所以 rx 认为「可能还有消息要来」，一直阻塞。
 
 **修复**：在开始接收之前 drop(tx)；或者用 recv_timeout 避免无限等待：
@@ -729,6 +752,8 @@ fn main() {
     println!("结束了");
 }
 ```
+
+</details>
 
 ## 23.8 动手练习
 

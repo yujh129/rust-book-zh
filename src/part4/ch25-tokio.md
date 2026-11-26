@@ -486,6 +486,9 @@ note: required by a bound in `tokio::spawn`
     |                     ^^^^ required by this bound in `spawn`
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`tokio::spawn` 要求提交的 future 实现 `Send`。这段代码在 `.await` 之后还使用 `guard`，状态机必须把它保存下来；标准库为兼容要求在原线程解锁的平台，把 `MutexGuard` 定义为 `!Send`。若仅在 `#[tokio::main]` 的根 future 中运行同样的代码，就没有这条 `spawn` 约束。
 
 **修复**：缩小临界区，让 Guard 在 await 之前被 drop；或改用 `tokio::sync::Mutex`：
@@ -512,6 +515,8 @@ async fn main() {
 }
 ```
 
+</details>
+
 ### 案例 2：把 main 写成 async
 
 ```rust,editable
@@ -528,6 +533,9 @@ error[E0752]: `main` function is not allowed to be `async`
   | ^^^^^^^^^^^^^^^ `main` function is not allowed to be `async`
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`main` 由 C 运行时调用，它只会调用同步函数；`async fn main` 返回的是一个 Future，没人去 poll 它。语法层面语言直接禁止。
 
 **修复**：加 `#[tokio::main]`，让宏生成同步 `main` 并在里面 `block_on`：
@@ -540,6 +548,8 @@ async fn main() {
 ```
 
 没有 tokio 时也可以手写：`fn main() { tokio::runtime::Runtime::new().unwrap().block_on(async_main()) }`。
+
+</details>
 
 ### 案例 3：spawn 捕获了借用而不是所有权
 
@@ -574,6 +584,9 @@ note: requirement that the value outlives `'static` introduced here
   |         F: Future + Send + 'static,
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`spawn` 把任务交给运行时，运行时可能在本函数返回之后才执行它，所以要求 `F: 'static`。`slice` 借用了局部的 `s`，`s` 会在函数结束时销毁，这个借用活不到 `'static`。
 
 **修复**：把所有权移进任务（`move` + 拥有者一起移走），或用 `Arc<str>` 共享：
@@ -594,6 +607,8 @@ async fn main() {
 }
 ```
 
+</details>
+
 ### 案例 4：忘了 .await，直接解引用 Future
 
 ```rust,editable
@@ -613,6 +628,9 @@ error[E0614]: type `impl Future<Output = tokio::sync::MutexGuard<'_, {integer}>>
   |                    ^^^^^^ can't be dereferenced
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`tokio::sync::Mutex::lock` 是 `async fn`，调用它只是**创建**一个 Future，并没有真的拿锁。Future 不能解引用，必须 `.await` 才会拿到 `MutexGuard`。
 
 **修复**：加 `.await`（并且通常还要处理 poisoned 错误）：
@@ -627,6 +645,8 @@ async fn main() {
 ```
 
 这条规则适用于所有 `async fn`：**调用只是「造了一个任务描述」，`.await` 才开始执行**。忘了 `.await` 时，编译器通常报「Future 不能做什么」，而不是「你忘了 await」——要学会认出 `impl Future<...>` 这个类型。
+
+</details>
 
 ### 案例 5（运行期）：在运行时里再启动一个运行时
 
@@ -648,6 +668,9 @@ If you are in an async function, use `.await` on the future instead of blocking 
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`block_on` 的语义是「阻塞当前线程直到 Future 完成」。而当前线程正被外层运行时用来驱动任务，再阻塞它就等于让运行时自己堵住自己，所以 tokio 直接 panic。
 
 **修复**：在 async 函数里就老实 `.await`；确实需要跑一个「必须用独立运行时」的库函数时，用 `spawn_blocking` 把它挪到阻塞线程池：
@@ -667,6 +690,8 @@ async fn main() {
     .unwrap();
 }
 ```
+
+</details>
 
 ## 25.8 动手练习
 

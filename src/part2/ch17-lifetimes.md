@@ -544,6 +544,9 @@ help: consider introducing a named lifetime parameter
   |           ++++     ++          ++          ++
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：两个输入引用各自被省略规则补成独立的生命周期，输出引用没有可继承的那个"唯一来源"，编译器拒绝猜。它也猜不了——返回哪个取决于运行期的长度比较。
 
 **修复**：用一个相同的 `'a` 把三者绑在一起，返回值取两者中较短的有效区间：
@@ -559,6 +562,8 @@ fn main() {
     println!("{}", longest(&a, &b));
 }
 ```
+
+</details>
 
 ### 案例 2：返回了局部变量的切片——E0515
 
@@ -587,6 +592,9 @@ error[E0515]: cannot return value referencing local variable `owned`
 error: aborting due to 1 previous error
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：签名里的 `Vec<&str>` 按省略规则声称"借自 input"，函数体却把切片建在局部变量 `owned` 上。`owned` 在函数返回时释放，切片随之悬垂。注意报错位置在函数体内部，说明编译器先相信了签名，再检查实现是否兑现。
 
 **修复**：要么让返回值真正借自 input（去掉 `to_uppercase`，直接切原文），要么把结果变成拥有所有权的 `String`：
@@ -602,6 +610,8 @@ fn main() {
     println!("{:?}", fields);
 }
 ```
+
+</details>
 
 ### 案例 3：引用活得比被借用的值长——E0597
 
@@ -630,6 +640,9 @@ error[E0597]: `s` does not live long enough
   |                    - borrow later used here
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`r` 的类型是 `&String`，它的区域必须覆盖第 7 行的使用点；而 `s` 在第 6 行的右花括号处被 drop。编译器把三条关键位置都标了出来：声明处、借用处、使用处。
 
 **修复**：让被借用的值活得比引用久——把 `s` 提到与 `r` 同一层，或者干脆返回所有权：
@@ -641,6 +654,8 @@ fn main() {
     println!("{}", r);
 }
 ```
+
+</details>
 
 ### 案例 4：方法签名把借用绑死在结构体的生命周期上——E0499
 
@@ -682,6 +697,9 @@ error[E0499]: cannot borrow `*root` as mutable more than once at a time
    |     ^^^^ second mutable borrow occurs here
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`&'a mut self` 里的 `'a` 不是"这次调用的借用区间"，而是结构体参数里那个 `'a`。`&mut` 对 pointee 不变，于是内层 `'a` 被冻结，每次 `add` 都要求借 `root` 整整 `'a`——第一次调用就把 `root` 借到了最后，第二次无从下手。17.6 讲过这条型变规则。
 
 **修复**：方法接收者只写 `&mut self`，让编译器为每次调用生成一个短的借用区间；`Node<'a>` 里的 `'a` 继续描述节点数据：
@@ -705,6 +723,8 @@ fn main() {
     println!("{} {}", root.data, root.children.len());
 }
 ```
+
+</details>
 
 ### 案例 5：impl 方法漏了参数的生命周期——E0621
 
@@ -738,6 +758,9 @@ help: add explicit lifetime `'a` to the type of `name`
   |                   ++
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：返回类型写了 `Config<'a>`，参数 `name` 却被省略规则补成另一个独立生命周期 `'1`。签名没有承诺 `name` 活够 `'a`，函数体却把它存进要求 `'a` 的字段。`impl` 头里的 `'a` 不是"随便挑一个区域"，它对整个 impl 块内的签名都成立。
 
 **修复**：把参数写成 `&'a str`，与字段、返回值统一：
@@ -758,6 +781,8 @@ fn main() {
     println!("{}", c.name);
 }
 ```
+
+</details>
 
 ## 动手练习
 

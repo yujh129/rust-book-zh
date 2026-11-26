@@ -502,7 +502,11 @@ help: ensure that all possible cases are being handled by adding a match arm wit
    |
 12 ~         Direction::East => "右",
 13 ~         Direction::West => todo!(),
-«««
+...
+```
+
+<details class="case-answer">
+<summary>查看答案</summary>
 
 **原因**：`match` 必须覆盖被匹配值的每一种可能。`Direction` 有四个变体，你只写了三个，编译器就把漏掉的那个指出来。这不是提醒，是错误——Rust 不允许"剩下的情况悄悄跳过"，所以 C 的 `switch` 忘记 `break`、Java 的 `default` 吞掉新枚举值这类事故在这里编译不过。help 里给出的 `todo!()` 是先用占位让代码编译通过的办法，运行到那一支会 panic，之后再补实现。
 
@@ -529,6 +533,8 @@ fn main() {
     println!("{}", describe(Direction::West));
 }
 ```
+
+</details>
 
 ### 案例 2：分支类型不一致——E0308
 
@@ -565,6 +571,9 @@ help: consider borrowing here
 
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`match` 是一个表达式，它的类型由所有分支共同决定，每个分支都必须产出同一种类型。第一个分支给的是字符串字面量 `&str`，第二个给的是 `String`，两者不是一回事。编译器以先出现的分支为基准，在第二个分支上报"expected `&str`, found `String`"。
 
 **修复**：让所有分支产出同一种类型。这里统一成 `String` 最直接；如果你需要的是借用的字符串，可以改成 `"one"`、`"two"` 全用字面量。
@@ -580,6 +589,8 @@ fn main() {
     println!("{}", msg);
 }
 ```
+
+</details>
 
 ### 案例 3：从实现了 Drop 的类型里移出字段——E0509
 
@@ -620,6 +631,9 @@ help: consider borrowing the pattern binding
 
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`match w` 按值匹配，模式 `Wrapper { value }` 会把 `value` 这个字段从 `w` 里搬出来。但 `Wrapper` 实现了 `Drop`，它的 `drop` 方法在析构时要访问 `self.value`；字段被搬走，析构函数就会读到已经失效的数据。Rust 因此禁止对实现了 `Drop` 的类型做部分移出，报错里那句"cannot move out of type ... which implements the Drop trait"说的就是这件事。
 
 **修复**：按引用匹配。`match &w` 之后，模式绑定的 `value` 是 `&String`，只借用不搬走，`Drop` 仍然能正常工作。
@@ -644,6 +658,8 @@ fn main() {
     }
 }
 ```
+
+</details>
 
 ### 案例 4：match 移动后又使用——E0382
 
@@ -684,6 +700,9 @@ help: borrow this binding in the pattern to avoid moving the value
 
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`m` 的类型是 `Msg`，里面装着 `String`，而 `String` 不是 `Copy`。第一次 `match m` 按值匹配，`Msg::Text(s)` 把整个字符串的所有权移进了 `s`；`m` 在那一刻已经被拆开，第二次再用它就是使用已移动的值。注意报错位置在第二次 `match`，真正的原因在第一次。
 
 **修复**：两次都按引用匹配，绑定得到 `&String`，所有权留在 `m` 里。
@@ -706,6 +725,8 @@ fn main() {
     }
 }
 ```
+
+</details>
 
 ### 案例 5：变体名拼错——E0599
 
@@ -745,6 +766,9 @@ help: there is a variant with a similar name
 
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：变体是类型命名空间里的项，写法固定为 `Expr::Add`，首字母大写。写成小写的 `Expr::add`，编译器会先按关联函数查找，找不到再报 E0599；报错里那条 `candidate #1: Add` 是它在 trait 里找到了同名的 `Add`，属于误导线索，真正有用的是最后一行的相似名提示。这类错误在只改了大小写或少打一个字母时最常见。
 
 **修复**：改成 `Expr::Add`。
@@ -763,6 +787,8 @@ fn main() {
     }
 }
 ```
+
+</details>
 
 ## 动手练习
 

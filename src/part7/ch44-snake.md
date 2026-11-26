@@ -771,6 +771,9 @@ error[E0502]: cannot borrow `self.snake` as mutable because it is also borrowed 
    = help: consider using an index-based loop instead, or collecting modifications into a separate collection
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`iter()` 借用了整个 `VecDeque`，而且这个借用要活到循环结束；`push_back` 又要求独占借用。两者在时间上重叠，借用检查器禁止——因为 `push_back` 可能触发扩容，让迭代器持有的指针失效，继续迭代就是访问已释放内存。
 
 **修复**：先把要追加的内容收集起来，循环结束后再写回去。这是 Rust 里「先收集、后修改」的标准解法：
@@ -803,6 +806,8 @@ fn main() {
     println!("{:?}", g.snake);
 }
 ```
+
+</details>
 
 ### 案例 2：漏写一个方向分支——E0004
 
@@ -850,9 +855,14 @@ help: ensure that all possible cases are being handled by adding a match arm wit
    |
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`match` 必须覆盖所有分支。这条规则看起来啰嗦，实际是在帮你：以后给 `Direction` 加一个 `Direction::Teleport`，所有漏掉它的 `match` 都会立刻编译失败，而不是等到运行时走进一个未定义分支。
 
 **修复**：补上 `Direction::Down => (0, 1)`。如果方向列表未来可能扩展、且某些分支行为相同，可以合并写 `Direction::Left | Direction::Right => ...` 或兜底 `_ => ...`；但兜底会让「新增方向」重新变成静默行为，一般不建议在核心逻辑里用。
+
+</details>
 
 ### 案例 3：调用了不存在的方法——E0599
 
@@ -878,6 +888,9 @@ error[E0599]: no method named `total_score` found for struct `Game` in the curre
   |                      ^^^^^^^^^^^ method not found in `Game`
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：字段叫 `score`，方法不存在。Rust 不会自动把字段名当成 getter（这一点和 Java 的 Lombok 或 Kotlin 的属性不同）。
 
 **修复**：直接用 `g.score`，或显式实现方法：
@@ -898,6 +911,8 @@ fn main() {
     println!("{}", g.total_score());
 }
 ```
+
+</details>
 
 ### 案例 4：把字符当方向传——E0308
 
@@ -931,6 +946,9 @@ note: function defined here
  6 | fn turn(d: Direction) {
    |    ^^^^ ------------
 ```
+
+<details class="case-answer">
+<summary>查看答案</summary>
 
 **原因**：`Direction` 是自定义枚举，`char` 是字符，两者之间没有隐式转换。这正是本章把输入层单独拆出来的理由：翻译发生在 `Direction::from_char`，逻辑层永远收到的是干净的 `Direction`。
 
@@ -967,6 +985,8 @@ fn main() {
     }
 }
 ```
+
+</details>
 
 ### 案例 5：移动后继续使用——E0382
 
@@ -1005,6 +1025,9 @@ note: if `Game` implemented `Clone`, you could clone the value
   |                 - you could clone this value
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`Game` 没有实现 `Copy`，`let other = g;` 是移动而不是复制。这个错误在游戏代码里尤其常见：想把当前状态存一份「快照」用于回放，结果把整个游戏移走了。
 
 **修复**：真要两份数据就 `#[derive(Clone)]` 后显式 `g.clone()`；只是借用就传 `&g`。注意 `Clone` 是**深拷贝**，`Game` 里如果有 `VecDeque` 就会复制整条蛇——大多数「快照」场景其实应该重新构造状态或只存差异。
@@ -1027,6 +1050,8 @@ fn main() {
     println!("{:?}", copy);
 }
 ```
+
+</details>
 
 ## 44.9 拼装与运行
 

@@ -761,6 +761,9 @@ note: required by a bound in `serde_json::to_string`
       |                 ^^^^^^^^^ required by this bound in `to_string`
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`to_string<T>` 的约束是 `T: Serialize`，而 `Config` 只有 `Debug`。
 注意错误不是指向 `use serde::Serialize;`——导入 trait 名和**为类型实现**这个 trait 是两回事。
 
@@ -775,6 +778,8 @@ struct Config {
 ```
 
 顺带一提，note 里那句「consider adding #[derive(serde::Serialize)]」是新版 rustc 里 serde 专门注册的诊断建议，非常省事——照着改基本一定对。
+
+</details>
 
 ### 案例 2：借用了局部变量还想把它返回
 
@@ -807,6 +812,9 @@ error[E0515]: cannot return value referencing local variable `input`
    |     returns a value referencing data owned by the current function
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`Borrowed<'a>` 里的 `&'a str` 直接指向输入缓冲区，而 `input` 是函数局部变量，函数返回时它就释放了。
 这里还有第二处错：返回类型写的是 `Borrowed<'static>`，就算 `input` 是 `'static` 也未必对——`from_str` 推断出的生命周期由参数决定，不会自动延长。
 
@@ -830,6 +838,8 @@ struct MaybeBorrowed<'a> {
 }
 ```
 
+</details>
+
 ### 案例 3：字段缺失时的运行期错误
 
 ```rust,noplayground
@@ -851,6 +861,9 @@ fn main() {
 Some(Error("missing field `port`", line: 1, column: 20))
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`u16` 没有默认值，serde 认为缺字段是数据错误。列号 20 指向对象的收尾 `}`，而不是字段 `host` 的位置——这是 serde_json 报告「对象解析完了但字段不全」的方式，别按列号去找字段。
 
 **修复**：给缺失的字段一个明确的默认值，三选一。
@@ -870,6 +883,8 @@ fn default_port() -> u16 { 8080 }
 ```
 
 选哪种取决于业务语义：`port` 有公认默认值就用函数；「没配置」和「配置为空」有区别就用 `Option`。
+
+</details>
 
 ### 案例 4：JSON 里的字符串转换不成整数
 
@@ -892,6 +907,9 @@ fn main() {
 Some(Error("invalid type: string \"8080\", expected u16", line: 1, column: 33))
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：serde 不做隐式类型转换。`u16` 的 Visitor 只实现整数访问器，遇到 JSON 字符串直接拒绝。
 这和 TOML 里 `port = "8080"` 失败是同一回事，也是很多「配置文件明明有值却启动失败」的根因。
 列号 33 指向字符串 `"8080"` 的右引号。
@@ -909,6 +927,8 @@ fn de_u16_from_any<'de, D: serde::Deserializer<'de>>(d: D) -> Result<u16, D::Err
     }
 }
 ```
+
+</details>
 
 ### 案例 5：内部标签遇到 newtype 变体
 
@@ -934,6 +954,9 @@ fn main() {
 ```text
 err: cannot serialize tagged newtype variant Event::Text containing a string
 ```
+
+<details class="case-answer">
+<summary>查看答案</summary>
 
 **原因**：内部标签要求把变体的数据「合并进」同一层对象，所以数据必须是键值对（结构体变体）。`String` 是标量，无处安放，于是运行期报错——注意这是**运行期**错误，编译器不会阻止你，测试里不跑到这条分支就发现不了。
 
@@ -963,6 +986,8 @@ enum Ext {
     Text(String),            // {"Text":"hi"}
 }
 ```
+
+</details>
 
 ## 29.9 动手练习
 

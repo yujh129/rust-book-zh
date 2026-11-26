@@ -714,6 +714,9 @@ help: consider cloning the value if the performance cost is acceptable
   |                   ++++++++
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`route` 收到的是 `&Request`，它只被允许读。`request.target` 出现在返回值位置上，需要一个真正的 `String`，而 `String` 没有实现 `Copy`，唯一能交出值的方式是把堆缓冲的所有权搬走。从借来的数据里搬走所有权，调用者手里的 `request` 立刻变成悬空的壳，编译器用 E0507 在这里截住。
 
 **修复**：两条路，按语义选。真要把字段交出去，就让 `route` 接收所有权；只想读，就传 `&request.target` 或 `request.target.as_str()`。41.4 的 `route(&request, root)` 之所以成立，是因为响应体来自 `fs::read` 新分配的 `Vec<u8>`，根本没有移动请求的字段。
@@ -737,6 +740,8 @@ fn main() {
     println!("{} {}", method, target);
 }
 ```
+
+</details>
 
 ### 案例 2：在 &self 的处理函数里往 Vec 里塞日志——E0596
 
@@ -771,6 +776,9 @@ help: consider changing this to be a mutable reference
   |                +++
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`Vec::push` 的接收者是 `&mut self`，而方法拿到的 `self` 是 `&Server`。共享借用不能凭空升级成可变借用，否则「同一时刻要么多个只读、要么一个可写」这条规则就破了。注意报错指在方法体内的 `self.log`，而不是调用点——这类错误的根在签名，改调用处没用。
 
 **修复**：单线程下把接收者改成 `&mut self`。但 41.5 的线程池要求处理函数能被多个 worker 共享，那时 `&mut self` 传不进 `FnOnce` 闭包，得把可变状态关进 `Mutex`：
@@ -794,6 +802,8 @@ fn main() {
     println!("{}", server.log.lock().unwrap().len());
 }
 ```
+
+</details>
 
 ### 案例 3：让 Request 借用 parse 里的局部 String——E0515
 
@@ -829,6 +839,9 @@ error[E0515]: cannot return value referencing local variable `line`
    | |_____^ returns a value referencing data owned by the current function
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`line` 是 `parse` 的局部变量，函数返回时它被 drop，堆缓冲归还分配器。返回的 `Request` 里那个 `&str` 指向的正是这块内存。编译器不判断调用者之后还会不会用，只要「返回值的生命周期不长于 `line`」这条约束无法证明，就拒绝。
 
 这正是 41.3 里那个 `struct Request<'a>` 版本的结局。要让借用版成立，缓冲区必须由调用者提供并活得比 `Request` 长；而 41.5 的 `handle_connection` 先在栈上建 `BufReader`，解析完还要跨过 `drop(reader)` 去写响应，两条命都保不住。所以最终选择了「Request 拥有 String」。
@@ -854,6 +867,8 @@ fn main() {
     println!("{}", parse(&mut reader).target);
 }
 ```
+
+</details>
 
 ### 案例 4：线程池任务捕获了 Rc——E0277
 
@@ -889,6 +904,9 @@ note: required because `root` is used within this closure
   = note: required for the cast from `Box<{closure@src/main.rs:9:22: 9:29}>` to `Box<(dyn FnOnce() + Send + 'static)>`
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`Job` 的 trait bound 要求 `Send`，因为闭包会被送到 worker 线程执行。`Rc` 的引用计数是一个普通整数，两个线程同时 clone 会把它数错，计数变小就提前释放、变大就永远泄漏，所以 `Rc<T>` 永远不实现 `Send`。编译器把 `Job` 的约束一路推导到闭包捕获的 `root` 上，报错末尾那句 required for the cast 说的就是这次检查：装箱后要擦成 `dyn FnOnce() + Send`，而捕获了 `Rc` 的闭包做不到。
 
 **修复**：跨线程共享所有权用 `Arc`，它的计数是原子操作。41.5 主程序里 `Arc<PathBuf>` 正是这个原因——每个 worker 都要读文档根目录，但谁都不拥有它。
@@ -907,6 +925,8 @@ fn main() {
 ```
 
 顺带记住同一条规则的另外两个成员：`RefCell<T>` 也不是 `Sync`，`*mut T` 两者都不是。想让一个类型能进线程池，它的每个字段都得先过 `Send` 这一关。
+
+</details>
 
 ### 案例 5：直接在 TcpStream 上按行读——E0599
 
@@ -940,6 +960,9 @@ error[E0599]: the method `read_line` exists for mutable reference `&mut TcpStrea
            which is required by `&mut TcpStream: BufRead`
 ```
 
+<details class="case-answer">
+<summary>查看答案</summary>
+
 **原因**：`read_line` 是 `BufRead` 的方法，`TcpStream` 只实现了 `Read`。E0599 的措辞值得细读：方法名找得到、接收者类型也对，卡住的是 trait bound。为什么标准库不给 `TcpStream` 实现 `BufRead`：TCP 是字节流，内核读走多少就是多少，昨天的半行不会替你留着；按行读要求的「多读一点、下次接着用」需要一块由调用者管理的缓冲，而这块缓冲一旦存在，就必须始终由同一个对象持有。
 
 **修复**：套一层 `BufReader`。它从 socket 一次读 8 KiB 进自己的缓冲，`read_line` 在这块缓冲里找换行，找不到才回内核再要。代价是缓冲里的字节只能由这个 `BufReader` 消费，后续再绕过它直接读 `stream` 就会丢数据——41.6 讲的正是这一点。
@@ -962,6 +985,8 @@ fn main() {
     }
 }
 ```
+
+</details>
 
 ## 完整源码
 
