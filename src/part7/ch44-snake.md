@@ -862,6 +862,31 @@ help: ensure that all possible cases are being handled by adding a match arm wit
 
 **修复**：补上 `Direction::Down => (0, 1)`。如果方向列表未来可能扩展、且某些分支行为相同，可以合并写 `Direction::Left | Direction::Right => ...` 或兜底 `_ => ...`；但兜底会让「新增方向」重新变成静默行为，一般不建议在核心逻辑里用。
 
+
+修复后的完整代码：
+
+```rust,editable
+enum Direction {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+fn delta(d: Direction) -> (i32, i32) {
+    match d {
+        Direction::Up => (0, -1),
+        Direction::Down => (0, 1),
+        Direction::Left => (-1, 0),
+        Direction::Right => (1, 0),
+    }
+}
+
+fn main() {
+    println!("{:?}", delta(Direction::Down));
+}
+```
+
 </details>
 
 ### 案例 3：调用了不存在的方法——E0599

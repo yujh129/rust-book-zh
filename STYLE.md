@@ -47,7 +47,15 @@ error[EXXXX]: ...        // 贴真实报错，允许省略与本题无关的行
 
 **原因**：……（一到两段，讲编译器在检查什么）
 
-**修复**：……（给出改好的代码；修复版的完整代码块也放在里面）
+**修复**：……（先用一句话说清怎么改）
+
+修复后的完整代码：
+
+```rust,editable
+// 改好、能直接跑的最小完整版本
+```
+
+（配置级修复改用 ```toml / ```bash，并注明改的是哪个文件）
 
 </details>
 
@@ -107,7 +115,7 @@ error[EXXXX]: ...        // 贴真实报错，允许省略与本题无关的行
 
 - 错误代码写成 ```rust,editable：读者把错的那一行改掉、点 Run 就能看到新结果，这比读解释有效得多。
 - 紧跟其后的 ```text 是**本机 rustc 的真实输出**，首行形如 `error[E0382]: ...`，读者改着改着就会拿它对照。
-- 修复后的完整代码也用 ```rust,editable，让读者能从错误版一步步改到修复版。
+- **每条答案都必须给出修复后的完整代码**，紧跟在 `**修复**` 之后、`</details>` 之前，用 ```rust,editable 让读者能从错误版一步步改到修复版；配置级修复（Cargo.toml、CI、feature）用 ```toml / ```bash。`tools/check_book.py` 会检查每条案例至少有两个 rust 块或一个配置块。
 - 需要外部 crate 的案例（tracing、clap、tokio、serde……）同样可以 editable，本地运行器内置 9 个常用 crate；超出这个范围的用 noplayground。
 - 答案收起：`**原因**` 到本案例结束（含修复版代码块）包在 `<details class="case-answer">` + `<summary>查看答案</summary>` 中，默认收起。这是正文里唯一允许的 HTML，`python tools/wrap_answers.py --only <章名>` 负责检查与补齐。
 - 测试代码（`#[test]`、`#[cfg(test)] mod tests`）也可以 editable：本地运行器看到这些标记就按 `cargo test` 编译运行，输出 `running N tests` / `test ... ok` / `test result: FAILED`。只有 `cargo build` 层面才会出现的报错（例如没有 `main` 的 E0601）仍写成 noplayground，并在正文里说清本地怎么复现。

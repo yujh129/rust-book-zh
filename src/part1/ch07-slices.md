@@ -599,6 +599,19 @@ help: function arguments must have a statically known size, borrowed types alway
 
 **修复**：加一个 `&` 变成 `&str`，长度由胖指针携带；需要持有所有权时改成 `String`。
 
+
+修复后的完整代码：
+
+```rust,editable
+fn greet(name: &str) {
+    println!("hello, {name}");
+}
+
+fn main() {
+    greet("world");
+}
+```
+
 </details>
 
 ## 动手练习

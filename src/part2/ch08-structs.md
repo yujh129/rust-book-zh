@@ -588,6 +588,21 @@ error: aborting due to 1 previous error
 
 **修复**：删掉多余的字段，或者检查是不是该给结构体加这个字段。
 
+
+修复后的完整代码：
+
+```rust,editable
+struct Point {
+    x: i32,
+    y: i32,
+}
+
+fn main() {
+    let p = Point { x: 1, y: 2 };
+    println!("{}", p.x);
+}
+```
+
 </details>
 
 ### 案例 3：想改字段但绑定不可变——E0596
@@ -631,6 +646,27 @@ error: aborting due to 1 previous error
 **原因**：`incr(&mut self)` 需要一个可变借用，而 `c` 是 `let` 绑定的不可变变量。**错误发生在调用点，不是定义点**——所以初学者常常去改 `impl`，改不对。
 
 **修复**：把绑定改成 `let mut c`。如果这个值在多个地方共享，就不能简单加 `mut`，得考虑 `Cell`/`RefCell`（第 19 章）或者重新设计接口。
+
+
+修复后的完整代码：
+
+```rust,editable
+struct Counter {
+    count: u32,
+}
+
+impl Counter {
+    fn incr(&mut self) {
+        self.count += 1;
+    }
+}
+
+fn main() {
+    let mut c = Counter { count: 0 };
+    c.incr();
+    println!("{}", c.count);
+}
+```
 
 </details>
 
@@ -743,6 +779,22 @@ error: aborting due to 1 previous error
 **原因**：`{:?}` 需要 `Debug` trait，而结构体默认不实现任何 trait。Rust 的原则是"不替你猜语义"，连打印格式都要显式声明。
 
 **修复**：在定义上方加 `#[derive(Debug)]`。注意 `{}`（Display）**不能** derive，需要手写 `impl std::fmt::Display`——因为 Display 面向用户，格式属于业务决策。
+
+
+修复后的完整代码：
+
+```rust,editable
+#[derive(Debug)]
+struct Point {
+    x: i32,
+    y: i32,
+}
+
+fn main() {
+    let p = Point { x: 1, y: 2 };
+    println!("{p:?}");
+}
+```
 
 </details>
 

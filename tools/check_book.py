@@ -77,6 +77,10 @@ def check(path):
                 issues.append('missing reason or fix in ' + case.splitlines()[0])
             if '<details class="case-answer">' not in case:
                 issues.append('answers not collapsed in ' + case.splitlines()[0])
+            n_rust = len(re.findall(r'^```rust[^\n]*$', case, re.M))
+            n_cfg = len(re.findall(r'^```(?:toml|bash|console)', case, re.M))
+            if n_rust < 2 and n_cfg == 0:
+                issues.append('no fixed code in ' + case.splitlines()[0])
     return n, issues
 
 

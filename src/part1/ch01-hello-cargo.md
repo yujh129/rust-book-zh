@@ -372,6 +372,16 @@ error: expected `;`, found `println`
 **原因**：Rust 的语句必须以分号结束，而 `let` 是语句不是表达式。`-` 标记的位置往往就是漏分号的地方。
 **修复**：`let x = 5;`。如果只是想让一个表达式的结果被丢弃，最后一行不带分号才是对的（`{` 块的值）。
 
+
+修复后的完整代码：
+
+```rust,editable
+fn main() {
+    let x = 5;
+    println!("{x}");
+}
+```
+
 </details>
 
 ### 案例 2：宏少了感叹号
@@ -401,6 +411,15 @@ help: use `!` to invoke the macro
 
 **原因**：`println` 是宏不是函数，宏调用必须带 `!`。同类错误还有忘记给 `vec!`、`format!`、`assert!` 加感叹号。
 **修复**：`println!("hello");`。
+
+
+修复后的完整代码：
+
+```rust,editable
+fn main() {
+    println!("hello");
+}
+```
 
 </details>
 
@@ -436,6 +455,15 @@ error[E0308]: mismatched types
 **原因**：`main` 只能返回 `()`、`Result<(), E>` 或实现了 `Termination` 的类型（如 `ExitCode`）。
 **修复**：返回 `()` 并用 `process::exit` 设置退出码，或改成 `fn main() -> Result<(), Box<dyn std::error::Error>>`。
 
+
+修复后的完整代码：
+
+```rust,editable
+fn main() {
+    println!("hi");
+}
+```
+
 </details>
 
 ### 案例 4：不在项目根目录
@@ -450,6 +478,14 @@ error: could not find `Cargo.toml` in `/home/me` or any parent directory
 
 **原因**：Cargo 需要从当前目录向上找 `Cargo.toml`。你在项目外，或者 `cd` 进了子目录但子目录不是独立 crate。
 **修复**：`cd` 到含 `Cargo.toml` 的目录。注意：如果子目录里也有一个 `Cargo.toml`（比如 workspace 成员），那就是"另一个项目"了，Cargo 会用最近的那个。
+
+
+修复：回到含 `Cargo.toml` 的目录再跑
+
+```console
+$ cd my-first-project    # 换成含 Cargo.toml 的那一层
+$ cargo run
+```
 
 </details>
 
@@ -480,6 +516,20 @@ error[E0428]: the name `main` is defined multiple times
 
 **原因**：同一个 crate 里入口只能有一个。常见于复制粘贴示例代码时把两段 `main` 都留下了。
 **修复**：只保留一个 `main`，另一个改名为普通函数并用 `#[allow(dead_code)]` 或直接删掉。
+
+
+修复后的完整代码：
+
+```rust,editable
+fn main() {
+    println!("first");
+    second();
+}
+
+fn second() {
+    println!("second");
+}
+```
 
 </details>
 

@@ -411,6 +411,17 @@ error[E0384]: cannot assign twice to immutable variable `count`
 **原因**：`let` 默认不可变，`+=` 是赋值操作。
 **修复**：`let mut count = 0;`。如果你其实想要"基于旧值算新值且不关心旧名字"，用遮蔽 `let count = count + 1;` 也行——但循环里这样写没有意义。
 
+
+修复后的完整代码：
+
+```rust,editable
+fn main() {
+    let mut count = 0;
+    count += 1;
+    println!("{count}");
+}
+```
+
 </details>
 
 ### 案例 2：类型不匹配（整数 vs 浮点）
@@ -442,6 +453,16 @@ help: if you intended to convert the value, use `as`
 **原因**：Rust 不做隐式数值转换，连 `3.14` 到 `i32` 这种"显然"的也不行。
 **修复**：显式转换。注意 `as i32` 是截断（得 3），要四舍五入得写 `3.14_f64.round() as i32`。
 
+
+修复后的完整代码：
+
+```rust,editable
+fn main() {
+    let x: i32 = 3.14_f64.round() as i32;
+    println!("{x}");
+}
+```
+
 </details>
 
 ### 案例 3：整数溢出（debug 下 panic）
@@ -468,6 +489,19 @@ note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 **原因**：`u8` 最大 255，加到 260 溢出。debug build 会 panic。
 **修复**：按语义选一个——`total = total.saturating_add(10)`（封顶 255）、换成 `u32`（放宽范围）、或用 `checked_add` 显式处理错误。**千万不要只在 release 测**，默认 release 配置下第一次加法回绕成 4，循环十次最终得到 94。
 
+
+修复后的完整代码：
+
+```rust,editable
+fn main() {
+    let mut total: u8 = 250;
+    for _ in 0..10 {
+        total = total.saturating_add(10);
+    }
+    println!("{total}");
+}
+```
+
 </details>
 
 ### 案例 4：用 `partial_cmp(...).unwrap()` 排序时遇到 NaN
@@ -491,6 +525,17 @@ called `Option::unwrap()` on a `None` value
 **原因**：`partial_cmp` 比较涉及 NaN 的两个值时返回 `None`，`unwrap` panic。
 **修复**：用 `f64::total_cmp`（把所有浮点值当成可比较的位模式）或者提前过滤：`list.retain(|x| !x.is_nan())`。
 
+
+修复后的完整代码：
+
+```rust,editable
+fn main() {
+    let mut list = vec![3.0_f64, f64::NAN, 1.0];
+    list.sort_by(|a, b| a.total_cmp(b));
+    println!("{list:?}");
+}
+```
+
 </details>
 
 ### 案例 5：as 静默截断
@@ -513,6 +558,19 @@ fn main() {
 
 **原因**：`as` 按位截断，不检查范围。
 **修复**：用 `u8::try_from(user_input)` 或先判断 `if (0..=255).contains(&user_input)`。这类 bug 编译器帮不了你，只能靠"凡是收窄转换都检查"的纪律。
+
+
+修复后的完整代码：
+
+```rust,editable
+fn main() {
+    let user_input: i32 = 300;
+    match u8::try_from(user_input) {
+        Ok(level) => println!("等级 {level}"),
+        Err(_) => println!("等级超范围：{user_input}（应在 0..=255）"),
+    }
+}
+```
 
 </details>
 

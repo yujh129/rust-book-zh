@@ -18,6 +18,7 @@
 - 新增 [`CHANGELOG.md`](CHANGELOG.md) 与 `CONTRIBUTING` 说明之外的发布流程记录。
 - **案例答案默认收起**：每章 5 个「典型错误案例」的原因与修复包进 `<details class="case-answer">` 面板，
   先自己判断错在哪，再点「查看答案」展开对照；打印或导出 PDF 时自动展开。全库 220 个案例面板。
+- **每条答案补上修复后的完整代码**：34 条原先只给文字说明的案例补齐修复版代码，其中 30 条是可直接运行的完整程序，4 条是配置级修复（Cargo.toml / CI / feature，附 `toml`、`bash` 片段）。
 
 ### 修正
 
@@ -35,7 +36,7 @@
 
 ### 交互
 
-- **错误案例块全面可编辑**：313 个 `rust,editable` 块（1.0.0 时只有 284 个），
+- **错误案例块全面可编辑**：343 个 `rust,editable` 块（含新增的 30 条修复版代码；1.0.0 时只有 284 个），
   先跑一遍看真实报错，再照「修复」改一行跑第二次对比。
 - **本地运行器改为统一走离线 Cargo 工程**（`tools/playground/`）：带 `#[test]` 的代码按 `cargo test` 运行，
   能看到 `test ... ok` 与 `test result: FAILED`。
@@ -50,7 +51,7 @@
 | --- | --- | --- |
 | 章节结构、必备小节、链接、每章五案例 | `python tools/check_book.py` | 50 页，0 处问题 |
 | 正文普通代码块逐块编译 | `python tools/verify_blocks.py src` | 436 块，0 失败 |
-| 错误案例报错与正文逐字比对 | `python tools/verify_cases.py` | 313 块：174 逐字对上、129 正常运行、10 预期运行期失败、0 不一致 |
+| 错误案例报错与正文逐字比对 | `python tools/verify_cases.py` | 342 块：174 逐字对上、158 正常运行、10 预期运行期失败、0 不一致 |
 | 案例答案面板完整 | `python tools/check_book.py`（每条案例必须含 `<details class="case-answer">`） | 220 个面板，0 缺失 |
 | 六个项目工程构建并测试 | `python tools/check_projects.py --offline` | 6 个工程，42 个测试全过 |
 | 整书构建 | `mdbook build` | 零警告 |

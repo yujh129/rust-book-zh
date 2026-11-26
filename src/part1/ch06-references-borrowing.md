@@ -426,6 +426,18 @@ error[E0502]: cannot borrow `data` as mutable because it is also borrowed as imm
 **原因**：`push` 可能导致堆内存重新分配，`first` 会变成悬垂指针。
 **修复**：先取出值再改——`let first = data[0];`（`i32` 是 `Copy`，直接复制）。
 
+
+修复后的完整代码：
+
+```rust,editable
+fn main() {
+    let mut data = vec![1, 2, 3];
+    let first = data[0];
+    data.push(4);
+    println!("{first}");
+}
+```
+
 </details>
 
 ### 案例 2：两个独占借用
@@ -458,6 +470,22 @@ error[E0499]: cannot borrow `s` as mutable more than once at a time
 **原因**：独占引用必须唯一，否则两个 `&mut` 可能同时修改同一块内存，破坏一致性。
 **修复**：让第一个借用结束再借第二个（把 `a.push` 挪到 `let b` 前），或者用 `split_at_mut`。
 
+
+修复后的完整代码：
+
+```rust,editable
+fn main() {
+    let mut s = String::from("hi");
+    {
+        let a = &mut s;
+        a.push('!');
+    }
+    let b = &mut s;
+    b.push('?');
+    println!("{s}");
+}
+```
+
 </details>
 
 ### 案例 3：对不可变变量取可变借用
@@ -485,6 +513,18 @@ error[E0596]: cannot borrow `s` as mutable, as it is not declared as mutable
 
 **原因**：能不能借用可变，首先取决于所有者自己是否可变。
 **修复**：`let mut s = ...`。注意：**`mut` 是变量的性质，不是类型的性质**——`&mut T` 类型本身保证被指向的值可变，但被借的那一方得先允许。
+
+
+修复后的完整代码：
+
+```rust,editable
+fn main() {
+    let mut s = String::from("hi");
+    let r = &mut s;
+    r.push('!');
+    println!("{s}");
+}
+```
 
 </details>
 
@@ -521,6 +561,21 @@ help: consider using a `let` binding to create a longer lived value
 **原因**：`&String::from("de")` 里的 `String` 是临时值，语句结束就被 drop，而 `s` 还想指向它。
 **修复**：给临时值一个名字。这类错误在链式调用、`if let` 里也很常见。
 
+
+修复后的完整代码：
+
+```rust,editable
+fn longest<'a>(a: &'a str, b: &'a str) -> &'a str {
+    if a.len() > b.len() { a } else { b }
+}
+
+fn main() {
+    let other = String::from("de");
+    let s = longest("abc", &other);
+    println!("{s}");
+}
+```
+
 </details>
 
 ### 案例 5：结构体里存引用却没有生命周期
@@ -554,6 +609,20 @@ help: consider introducing a named lifetime parameter
 
 **原因**：结构体存引用时，必须说明"这个引用和哪个东西活得一样久"。
 **修复**：`struct Parser<'a> { input: &'a str }`，使用时 `Parser { input: "abc" }`。如果觉得生命周期标注太吵，考虑存 `String`（拥有所有权）——第 17 章会讨论这个取舍。
+
+
+修复后的完整代码：
+
+```rust,editable
+struct Parser<'a> {
+    input: &'a str,
+}
+
+fn main() {
+    let p = Parser { input: "abc" };
+    println!("{}", p.input);
+}
+```
 
 </details>
 

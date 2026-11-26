@@ -396,6 +396,18 @@ help: consider cloning the value if the performance cost is acceptable
 **原因**：同一块堆内存不能有两个所有者。
 **修复**：如果你确实需要两份独立数据，`s.clone()`；如果只是读取，改成借用 `&s`。
 
+
+修复后的完整代码：
+
+```rust,editable
+fn main() {
+    let s = String::from("hi");
+    let t = s.clone();
+    let u = s;
+    println!("{t} {u}");
+}
+```
+
 </details>
 
 ### 案例 2：在循环里移动集合元素
@@ -428,6 +440,19 @@ error[E0382]: borrow of moved value: `names`
 
 **原因**：`for x in collection` 是 `IntoIterator::into_iter(collection)` 的语法糖，按值迭代会消费集合。
 **修复**：`for name in &names`（迭代 `&String`）或 `for name in names.iter()`。要同时拿到索引用 `names.iter().enumerate()`。只有确实要销毁集合、把元素搬走时才用按值循环。
+
+
+修复后的完整代码：
+
+```rust,editable
+fn main() {
+    let names = vec![String::from("a"), String::from("b")];
+    for name in &names {
+        println!("{name}");
+    }
+    println!("{}", names.len());
+}
+```
 
 </details>
 
@@ -466,6 +491,24 @@ help: consider borrowing here
 
 **原因**：你手上只有一份只读借用的 `&Config`，没有权力把里面的字段搬走（否则原值就残缺了）。
 **修复**：借用 `&c.name`；确实要一份独立的用 `c.name.clone()`；如果要消耗 `Config`，把参数改成 `c: Config`（`&Config` → `Config` 是调用方的事）。
+
+
+修复后的完整代码：
+
+```rust,editable
+struct Config {
+    name: String,
+}
+
+fn describe(c: &Config) -> String {
+    c.name.clone()
+}
+
+fn main() {
+    let c = Config { name: String::from("x") };
+    println!("{}", describe(&c));
+}
+```
 
 </details>
 
@@ -507,6 +550,24 @@ help: borrow this field to avoid moving the value
 **原因**：字段被移走之后，`job` 处于"部分移动"状态，不能再整体使用（`{:?}` 需要读全部字段）。
 **修复**：只借用字段（`&job.payload`）；或者一开始就整体 `let payload = job.payload.clone()`；或者用 `mem::take(&mut job.payload)` 让原字段变成空 `Vec`，结构体就仍然完整可用。
 
+
+修复后的完整代码：
+
+```rust,editable
+#[derive(Debug)]
+struct Job {
+    id: u32,
+    payload: Vec<u8>,
+}
+
+fn main() {
+    let mut job = Job { id: 1, payload: vec![1, 2, 3] };
+    let payload = std::mem::take(&mut job.payload);
+    println!("{job:?}");
+    println!("{payload:?}");
+}
+```
+
 </details>
 
 ### 案例 5：需要 Copy 却收到了非 Copy 的类型
@@ -542,6 +603,23 @@ error[E0382]: use of moved value: `token`
 
 **原因**：`Token` 内部有 `String`，不可能 `Copy`。
 **修复**：`let b = token.clone();`，或者重新设计——比如把 `Token` 设计成 `Token(u64)`（ID 语义，可以 `Copy`），或者让函数收 `&Token` 而不是 `Token`。
+
+
+修复后的完整代码：
+
+```rust,editable
+#[derive(Clone, Debug)]
+struct Token(String);
+
+fn consume(t: Token) -> Token { t }
+
+fn main() {
+    let token = Token(String::from("abc"));
+    let a = token.clone();
+    let b = token;
+    println!("{:?} {:?}", consume(a), consume(b));
+}
+```
 
 </details>
 
