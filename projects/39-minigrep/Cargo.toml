@@ -1,0 +1,7 @@
+[package]
+name = "minigrep"
+version = "0.1.0"
+edition = "2021"
+
+# 本章只使用标准库，不允许任何第三方依赖。
+[dependencies]

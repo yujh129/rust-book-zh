@@ -14,6 +14,8 @@ jobs:
         run: python tools/check_book.py
       - name: 普通 rust 代码块逐块类型检查
         run: python tools/verify_blocks.py src
+      - name: 六个项目工程构建并通过测试
+        run: python tools/check_projects.py
       - name: 安装 mdBook 并构建（零警告）
         run: |
           cargo install mdbook --version 0.5.4 --locked

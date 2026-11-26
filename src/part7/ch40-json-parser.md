@@ -41,7 +41,7 @@ $ cargo run -- '{"a": 1,}'
 解析失败：字节偏移 8：对象的键必须是字符串
 ```
 
-第一条叫往返（round trip）：解析再序列化，除了空白之外与输入一致。第二条要求失败时给出**字节偏移**，而不是一句「解析失败」。配置文件动辄几百 KB，没有位置信息的报错等于没报。
+第一条叫往返（round trip）：把同一份 JSON 解析再序列化，结构、键值关系与字符串内容保持一致。它**不是逐字节还原**——空白会被重排，数字会被规范化（`1e3` 输出成 `1000.0`，`-0` 输出成 `0`），各类 JSON 库都如此。第二条要求失败时给出**字节偏移**，而不是一句「解析失败」。配置文件动辄几百 KB，没有位置信息的报错等于没报。
 
 项目只用标准库，`Cargo.toml` 里连 `[dependencies]` 都不需要：
 
@@ -153,7 +153,7 @@ impl fmt::Display for ErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ErrorKind::UnexpectedEof => f.write_str("输入意外结束"),
-            ErrorKind::UnexpectedByte(b) => write!(f, "不认识的字符 {:?}", *b as char),
+            ErrorKind::UnexpectedByte(b) => write!(f, "偏移处有不认识的字节 0x{:02x}", b),
             ErrorKind::ExpectedValue => f.write_str("这里应该是一个值"),
             ErrorKind::ExpectedKey => f.write_str("对象的键必须是字符串"),
             ErrorKind::ExpectedColon => f.write_str("键后面缺少冒号"),
@@ -617,18 +617,32 @@ fn parse_number(lit: &str, pos: usize) -> Result<JsonNumber, ParseError> {
 
 ```rust,noplayground
 fn main() {
-    let src = match std::env::args().nth(1) {
-        Some(arg) => arg,
-        None => String::from(r#"{"name":"Ana","age":30,"tags":["rust","json"],"score":9.5}"#),
-    };
+    let mut input: Option<String> = None;
+    let mut pretty = false;
+    for arg in std::env::args().skip(1) {
+        if arg == "--pretty" {
+            pretty = true;
+        } else if input.is_none() {
+            input = Some(arg);
+        }
+    }
+    let src = input.unwrap_or_else(|| {
+        String::from(r#"{"name":"Ana","age":30,"tags":["rust","json"],"score":9.5}"#)
+    });
     match Parser::new(&src).and_then(|p| p.parse()) {
-        Ok(value) => println!("{}", value.to_json()),
+        Ok(value) => {
+            if pretty {
+                println!("{}", value.to_pretty());
+            } else {
+                println!("{}", value.to_json());
+            }
+        }
         Err(err) => println!("解析失败：{}", err),
     }
 }
 ```
 
-没有命令行参数时用一个内嵌样例，这样 `cargo run` 立刻有输出，方便手工试。`std::env::args().nth(1)` 拿走第二个参数（第零个是程序名），`String` 拥有这段输入，`Parser` 借用它，生命周期关系正好满足。
+没有命令行参数时用一个内嵌样例，这样 `cargo run` 立刻有输出，方便手工试；`--pretty` 走 40.8 的缩进输出，其余第一个参数当作待解析的 JSON 文本。`String` 拥有这段输入，`Parser` 借用它，生命周期关系正好满足。
 
 字符串解码是本章唯一需要分配内存的地方，所以它单独成函数：
 
@@ -951,20 +965,34 @@ fn write_pretty(&self, indent: usize, out: &mut String) {
 }
 
 fn pad(level: usize, out: &mut String) {
-    for _ in 0..level { out.push(' '); }
+    for _ in 0..level * 2 { out.push(' '); }
 }
 ```
 
-空数组与空对象用守卫分支单独处理，输出 `[]` 与 `{}`，不换行也不缩进——这是 pretty 打印的通行约定，`serde_json::to_string_pretty` 也是这么做的。
+再给 `JsonValue` 加一个返回 `String` 的包装，`main` 里就能一行调用（同一个类型可以有多个 `impl` 块）：
+
+```rust,noplayground
+impl JsonValue {
+    fn to_pretty(&self) -> String {
+        let mut out = String::new();
+        self.write_pretty(0, &mut out);
+        out
+    }
+}
+```
+
+空数组与空对象用守卫分支单独处理，输出 `[]` 与 `{}`，不换行也不缩进——这是 pretty 打印的通行约定，`serde_json::to_string_pretty` 也是这么做的。每层缩进两个空格，所以 `pad` 里乘 2：
 
 ```console
-$ cargo run
+$ cargo run -- --pretty
 {
   "name": "Ana",
+  "age": 30,
   "tags": [
     "rust",
     "json"
-  ]
+  ],
+  "score": 9.5
 }
 ```
 
@@ -974,15 +1002,18 @@ $ cargo run
 
 ### 递归深度与栈溢出
 
-把 40.4 的深度上限拿掉，喂给解析器 100 万个左方括号，会发生什么：
-
-把 40.4 的深度上限拿掉，喂给解析器 100 万个左方括号，会发生什么：
+把 40.4 的深度上限拿掉，喂给解析器 10 万个左方括号，会发生什么？下面这段独立的递归下降片段省略了解析器其余部分，只保留「每遇见一个 `[` 就递归一次」这个形状：
 
 ```rust,noplayground
-impl Parser {
+struct Rec {
+    src: Vec<u8>,
+    pos: usize,
+}
+
+impl Rec {
     fn value(&mut self) -> u64 {
-        match self.src[self.pos] {
-            b'[' => {
+        match self.src.get(self.pos) {
+            Some(b'[') => {
                 self.pos += 1;
                 let mut n = 0;
                 loop {
@@ -994,10 +1025,15 @@ impl Parser {
                     }
                 }
             }
-            b'0' => { self.pos += 1; 1 }
+            Some(b'0') => { self.pos += 1; 1 }
             _ => 0,
         }
     }
+}
+
+fn main() {
+    let mut rec = Rec { src: vec![b'['; 100_000], pos: 0 };
+    println!("{}", rec.value());
 }
 ```
 
@@ -1226,6 +1262,32 @@ fn main() {
     let _ = load("data.json");
 }
 ```
+
+## 完整源码
+
+本章的完整实现在 `projects/40-json-parser/`（<https://github.com/yujh129/rust-book-zh/tree/main/projects/40-json-parser>）：单文件 690 行，零依赖。
+
+```console
+$ cd projects/40-json-parser
+$ cargo run --offline -- --pretty
+{
+  "name": "Ana",
+  "age": 30,
+  "tags": [
+    "rust",
+    "json"
+  ],
+  "score": 9.5
+}
+$ cargo run --offline -- '{"a": 1,}'
+解析失败：字节偏移 8：对象的键必须是字符串
+```
+
+| 文件 | 内容 |
+| --- | --- |
+| `src/main.rs` | 按 40.2–40.8 的顺序组织：`JsonValue`/`JsonNumber`、词法分析器、递归下降解析器（深度上限）、`to_json`/`to_pretty`、`main`，末尾是 6 个单元测试 |
+
+`cargo test --offline` 跑 6 个测试。正文「典型错误案例」里的五段代码是故意写错的示例，不属于实现，项目里只收正确版本，所以测试是全绿的。
 
 ## 动手练习
 

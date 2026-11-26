@@ -12,7 +12,7 @@
 
 限制很明确：不引入 axum、hyper，也不引入任何第三方 crate。全部依赖只有 std::net::TcpListener、std::thread 和 std::fs。这样做不是排斥框架，而是先看清框架替你做了什么，之后才有依据判断什么时候不该用它。
 
-最终产物两百行左右：能并发处理请求、能防目录穿越、能正确区分 404 与 400。后面各小节的代码块按顺序拼起来就是完整的 main.rs。
+最终产物三百行上下（去掉空行与注释约 240 行）：能并发处理请求、能防目录穿越、能正确区分 404 与 400。后面各小节的代码块按顺序拼起来就是完整的 main.rs。
 
 ## 41.1 需求、验收标准与 HTTP/1.1 最小子集
 
@@ -83,6 +83,35 @@ http-server/
     └── main.rs
 ```
 
+public 里放两个最小的静态文件，后面 console 里的 `Content-Length` 就是按它们算的：
+
+```html
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>http-server</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <h1>Hello from std::net</h1>
+  <p>只用标准库的多线程 HTTP/1.1 静态文件服务器。</p>
+</body>
+</html>
+```
+
+```css
+body {
+  margin: 2rem auto;
+  max-width: 40rem;
+  font-family: system-ui, sans-serif;
+}
+
+h1 {
+  color: #1f6feb;
+}
+```
+
 先写一个能跑通的最小版本：接受连接、读一次、回一段固定内容。它离成品很远，但验证了 bind 和 spawn 这两步。
 
 ```rust
@@ -146,6 +175,7 @@ struct Request<'a> {
 这个设计在有生命周期的解析器里很常见，但它要求缓冲区活得比 Request 长。而实际调用链是 handle_connection 在栈上创建 BufReader，解析函数还想借用自己那行临时 String 返回 Request，函数一返回缓冲区就销毁，引用立刻悬空。这正是 41.7 案例 3 的报错。所以这里让 Request 拥有自己的 String：多一次分配，换掉一整类生命周期问题。
 
 ```rust
+use std::fmt;
 use std::io::{self, BufRead, BufReader, Cursor};
 
 const MAX_HEADER_BYTES: usize = 8 * 1024;
@@ -170,12 +200,25 @@ impl From<io::Error> for ParseError {
     }
 }
 
+// 两个字段都真的被读到，日志里才有可用的信息（只派生 Debug 会被 dead_code 判为未读）。
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ParseError::Io(err) => write!(f, "读取失败：{}", err),
+            ParseError::BadRequest(reason) => write!(f, "请求不合法：{}", reason),
+        }
+    }
+}
+
 impl Request {
     fn parse<R: BufRead>(reader: &mut R) -> Result<Request, ParseError> {
+        // 给整个请求头（含请求行）一个 8 KiB 的预算：Take 在预算用尽时让
+        // read_line 返回 0，单行超长也会被截住，不会先把 String 撑大再检查。
+        let mut limited = std::io::Read::take(reader, MAX_HEADER_BYTES as u64);
         let mut line = String::new();
-        let n = reader.read_line(&mut line)?;
+        let n = limited.read_line(&mut line)?;
         if n == 0 {
-            return Err(ParseError::BadRequest("请求行为空"));
+            return Err(ParseError::BadRequest("请求行为空或头部超过 8 KiB"));
         }
         let line = line.trim_end_matches(['\r', '\n']);
         let mut parts = line.split(' ');
@@ -190,16 +233,12 @@ impl Request {
         }
 
         let mut headers = Vec::new();
-        let mut total = n;
         loop {
             let mut raw = String::new();
-            let n = reader.read_line(&mut raw)?;
+            let n = limited.read_line(&mut raw)?;
             if n == 0 {
-                return Err(ParseError::BadRequest("头部未以空行结束"));
-            }
-            total += n;
-            if total > MAX_HEADER_BYTES {
-                return Err(ParseError::BadRequest("头部过大"));
+                // 预算耗尽时 Take 也返回 0，把两种情况一起报出来。
+                return Err(ParseError::BadRequest("头部未以空行结束或超过 8 KiB"));
             }
             if raw == "\r\n" || raw == "\n" {
                 break;
@@ -251,7 +290,7 @@ read_line 把换行符也读进来，返回值是读到的字节数，0 表示�
 
 请求行用 split(' ') 而不是 split_whitespace()。规范里三段之间是单个空格，用 split(' ') 时空字段会立刻暴露出来，比如两个连续空格会让 parts.next() 拿到空串，进而被 method.is_empty() 拦住。
 
-头部按字节数累计限流，计数值把请求行也算进去。8 KiB 是个折中：浏览器的请求头通常在 1 KiB 以内，带上 Cookie 也很少超过 4 KiB。没有这个上限，一个只发 `X-Fill: a` 然后不断续行的客户端可以让服务端的内存无限增长，这类攻击叫慢速头部攻击。
+头部用一个 `Take` 限制在 8 KiB，请求行算在同一个预算里：`let mut limited = std::io::Read::take(reader, MAX_HEADER_BYTES as u64);`。这里要用 UFCS 写出接收者：`reader` 的类型是 `&mut R`，直接写 `reader.take(n)`（或 `reader.by_ref().take(n)`）时方法解析会落到 `R` 自己头上，编译器要把 `R` 从可变借用后面移出来，报 E0507（cannot move out of a mutable reference）；写成 `std::io::Read::take(reader, n)` 则是把 `&mut R` 这个引用本身交给 `take`，得到 `Take<&mut R>`，既限了额又没动 `R`。这一步必须放在读之前——如果在 `read_line` 返回之后再累计字节数，单行不写 CRLF 时 `String` 仍会一路涨到内存耗尽，上限形同虚设。8 KiB 是个折中：浏览器的请求头通常在 1 KiB 以内，带上 Cookie 也很少超过 4 KiB。没有上限时，一个只发 `X-Fill: a` 再逐行续写的客户端就能耗住线程，这类攻击叫慢速头部攻击。
 
 头部存成 Vec 而不是 HashMap，是为了保留顺序并允许同名头重复（Set-Cookie 就会重复）。比较时统一转小写，HTTP 头部名本身大小写不敏感。
 
@@ -560,7 +599,7 @@ fn handle_connection(mut stream: TcpStream, root: &Path) {
     let (response, head_only) = match parsed {
         Ok(request) => (route(&request, root), request.method == "HEAD"),
         Err(err) => {
-            eprintln!("bad request: {:?}", err);
+            eprintln!("请求被拒绝：{}", err);
             (Response::bad_request(), false)
         }
     };
@@ -593,16 +632,16 @@ fn main() -> io::Result<()> {
 }
 ```
 
-放进 public/index.html 后启动，实测输出如下。三行命令分别对应 200、404、400：
+把上面两个文件放进 public 后启动，实测输出如下。三行命令分别对应 200、404、400：
 
 ```console
 $ curl -i http://127.0.0.1:7878/
 HTTP/1.1 200 OK
 Content-Type: text/html; charset=utf-8
-Content-Length: 168
+Content-Length: 274
 Connection: close
 
-$ curl -i http://127.0.0.1:7878/missing.html
+$ curl -i http://127.0.0.1:7878/missing
 HTTP/1.1 404 Not Found
 Content-Type: text/plain; charset=utf-8
 Content-Length: 14
@@ -615,7 +654,7 @@ Content-Length: 16
 Connection: close
 ```
 
-200 的响应体就是 index.html 的 168 字节，console 里为省空间省略了。404 与 400 的体分别是 `404 Not Found\n` 与 `400 Bad Request\n`，长度 14 与 16 对得上。
+200 的响应体就是 index.html 的 274 字节，console 里为省空间省略了。404 与 400 的体分别是 `404 Not Found\n` 与 `400 Bad Request\n`，长度 14 与 16 对得上。
 
 ### Ctrl-C 与优雅退出
 
@@ -923,6 +962,31 @@ fn main() {
     }
 }
 ```
+
+## 完整源码
+
+纯标准库实现就在 `projects/41-http-server/`（<https://github.com/yujh129/rust-book-zh/tree/main/projects/41-http-server>）：单文件 338 行，零依赖，`public/` 是它要服务的静态目录。
+
+```console
+$ cd projects/41-http-server
+$ cargo run --offline
+serving <项目目录>/public at http://127.0.0.1:7878
+# 另开一个终端
+$ curl -i http://127.0.0.1:7878/
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=utf-8
+Content-Length: 274
+$ curl -o /dev/null -w '%{http_code}\n' http://127.0.0.1:7878/missing
+404
+```
+
+本机实测：`/` 返回 274 字节的 `index.html`，`/style.css` 返回 114 字节，`/missing` 返回 404，带一个 9.5 KB 头部的请求返回 400（8 KiB 预算生效）。
+
+| 文件 | 内容 |
+| --- | --- |
+| `src/main.rs` | `Request`/`parse`/`ParseError`、路径安全、响应拼装、固定线程池与优雅退出、`main` |
+| `public/index.html` | 274 字节的演示页，`/` 与 `/index.html` 都指向它 |
+| `public/style.css` | 114 字节，用来验证 `Content-Type` 分支 |
 
 ## 41.8 动手练习
 

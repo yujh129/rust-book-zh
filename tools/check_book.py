@@ -35,7 +35,7 @@ def check(path):
     if is_front:
         return n, []
     low = 500 if is_project else (200 if is_appendix else 450)
-    high = 1250 if is_project else (700 if is_appendix else 1200)
+    high = 1400 if is_project else (700 if is_appendix else 1200)
     if n < low or n > high:
         issues.append('lines ' + str(n) + ' outside [' + str(low) + ',' + str(high) + ']')
     if '<!-- stub -->' in text:

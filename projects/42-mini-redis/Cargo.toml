@@ -1,0 +1,9 @@
+[package]
+name = "miniredis"
+version = "0.1.0"
+edition = "2021"
+description = "第 42 章项目：mini-redis，一个只用标准库的 RESP 内存数据库"
+
+[dependencies]
+# 第 42 章明确「全部只用标准库」：不引入 tokio / serde 等任何依赖。
+# 需要离线构建时直接 cargo build --offline 即可，没有依赖要解析。

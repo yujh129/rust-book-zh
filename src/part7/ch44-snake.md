@@ -165,7 +165,7 @@ fn main() {
 }
 ```
 
-`seed | 1` 保证种子非零（全零的 LCG 会永远输出 0）；`>> 33` 取高位而不是 `% 2^32` 取低位，因为 LCG 的低位周期很短，直接取低位会出现明显的规律。**真正的密码学随机数不能用 LCG**，但游戏里决定食物位置完全够用。
+`seed | 1` 保证种子非零（全零的 LCG 会永远输出 0）；`>> 33` 把 64 位结果的最高 31 位挪到低端，再 `as u32` 截断，取的是高位而不是低位——LCG 的低位周期很短，直接取低位会出现明显的规律。**真正的密码学随机数不能用 LCG**，但游戏里决定食物位置完全够用。
 
 ## 44.4 核心循环：一个结构体加四个方法
 
@@ -200,6 +200,8 @@ struct Game {
 ```rust,noplayground
 impl Game {
     fn new(w: i32, h: i32, seed: u64) -> Self {
+        // 初始蛇占 3 格，食物还要再占 1 格：棋盘至少 4 格才构造得出合法局面。
+        debug_assert!(w * h >= 4, "棋盘至少要有 4 格");
         let mut snake = VecDeque::new();
         let cy = h / 2;
         let cx = w / 2;
@@ -232,6 +234,7 @@ impl Game {
 2. **`food` 先填 `(0, 0)` 再调 `place_food`**。因为「食物不能在蛇身上」这个不变式需要蛇已经存在，而构造结构体时无法先调方法再赋值字段（除非用 `Option` 或两段式构造）。先放一个占位值、构造完立刻修正，是这个模式的常用解法。
 3. **`head()` 返回 `Point` 而不是 `&Point`**：`Point` 是 `Copy`，返回值省去一次借用，调用方也不需要关心 `snake` 的借用期。
 4. **`expect` 在这里是安全的**：不变式是「蛇至少有 3 节」，只有测试里手工清空 `snake` 才会破坏它——那种情况本就该 panic。
+5. **`new` 会检查棋盘尺寸**：初始蛇占 3 格、食物还要占 1 格，`w * h < 4`（比如 1×1）时开局就已经是死局。`debug_assert!` 在 debug 构建里立即 panic，在 release 里被编译掉，不留运行时开销。
 
 ### 放食物：在空格里均匀抽样
 
@@ -402,7 +405,9 @@ fn main() {
         let Some(dir) = Direction::from_char(c) else {
             continue;
         };
-        game.turn(dir);
+        if !game.turn(dir) {
+            continue; // 掉头被拒绝：这一步不推进
+        }
         if !game.step() {
             if frames {
                 print!("{}", game.render());
@@ -553,6 +558,38 @@ mod tests {
     }
 
     #[test]
+    fn moving_without_food_keeps_length() {
+        let mut g = Game::new(8, 6, 3);
+        g.food = point(0, 0);
+        assert!(g.step());
+        assert_eq!(g.snake.len(), 3, "不吃食物时长度不变");
+        assert_eq!(g.score, 0);
+        assert_eq!(g.head(), point(5, 3));
+    }
+
+    #[test]
+    fn wall_crash_stops_the_game() {
+        let mut g = Game::new(8, 6, 3);
+        g.food = point(0, 0);
+        assert!(g.step());
+        assert!(g.step());
+        assert!(g.step());
+        assert!(!g.step(), "第 4 次移动越界");
+        assert_eq!(g.status, Status::Crashed("撞到墙"));
+        assert!(!g.step(), "结束之后 step 不再推进");
+    }
+
+    #[test]
+    fn opposite_turn_is_rejected() {
+        let mut g = Game::new(8, 6, 3);
+        assert_eq!(g.dir, Direction::Right);
+        assert!(!g.turn(Direction::Left));
+        assert_eq!(g.dir, Direction::Right, "掉头被拒绝后方向不变");
+        assert!(g.turn(Direction::Up));
+        assert_eq!(g.dir, Direction::Up);
+    }
+
+    #[test]
     fn full_board_wins() {
         let mut g = Game::new(4, 1, 3);
         assert_eq!(g.status, Status::Running);
@@ -560,10 +597,27 @@ mod tests {
         assert_eq!(g.status, Status::Won);
         assert_eq!(g.snake.len(), 4);
     }
+
+    #[test]
+    fn food_is_never_placed_on_the_snake() {
+        for seed in 0..200u64 {
+            let mut g = Game::new(12, 8, seed);
+            for _ in 0..30 {
+                assert!(
+                    !g.snake.contains(&g.food),
+                    "seed {} 把食物放到了蛇身上",
+                    seed
+                );
+                assert!(g.food.x >= 0 && g.food.x < g.w);
+                assert!(g.food.y >= 0 && g.food.y < g.h);
+                g.place_food();
+            }
+        }
+    }
 }
 ```
 
-（完整文件里还有 `moving_without_food_keeps_length`、`wall_crash_stops_the_game`、`opposite_turn_is_rejected`、`food_is_never_placed_on_the_snake` 四个测试，篇幅原因这里只摘了五个。）
+这 9 个测试就是全部：初始状态、吃到食物、正常移动、撞墙、掉头被拒、进入尾巴格、自撞、满屏通关、食物不在蛇身上。每一个都对应 44.2 节的一条规则，规则变了测试就会红。
 
 两个测试值得单独说明：
 
@@ -631,7 +685,7 @@ fn main() {
 
 `rand` crate 当然更专业，但它带来一个依赖，而本章的目标是「纯 std 可运行」。LCG 的三行实现在游戏里完全够用，因为食物位置的随机性不影响任何逻辑正确性——最坏情况是食物出现得不够随机，玩家体验差一点。
 
-但要注意 LCG 的两个坑：种子不能是 0（否则输出恒为 0），以及**低位随机性差**。`(self.0 >> 33) as u32` 取的是中间 32 位，避开了最低位的短周期。如果换成 `(self.0 % 100) as u32` 去取食物下标，会看到食物明显「偏好」某些格子。
+但要注意 LCG 的两个坑：种子不能是 0（否则输出恒为 0），以及**低位随机性差**。`(self.0 >> 33) as u32` 取的是最高 31 位（`as u32` 会把最后一位截掉），避开了最低位的短周期。如果换成 `(self.0 % 100) as u32` 去取食物下标，会看到食物明显「偏好」某些格子。
 
 ### 为什么用「命令串」而不是实时循环
 
@@ -962,7 +1016,7 @@ fn main() {
 
 ## 44.9 拼装与运行
 
-本章的代码块按出现顺序拼接，就是完整的 `src/main.rs`（约 330 行）。顺序与对应的文件头如下：
+本章的代码块按出现顺序拼接，就是完整的 `src/main.rs`（约 430 行，含 9 个测试）。注意正文里有三段**独立的演示代码**带了各自的 `fn main`——44.3 的 `Direction` 演示、44.3 的 `Lcg` 演示、44.8 的 `VecDeque` 演示；拼装真实程序时要跳过它们，否则会出现重复的 `main`。其余代码块按下面的顺序拼：
 
 ```rust,noplayground
 use std::collections::VecDeque;
@@ -1005,6 +1059,25 @@ cargo test --offline   # 9 个单元测试
 ```
 
 本章所有输出都是在本机（rustc 1.100.0、Windows、`cargo build --offline`）实际跑出来的，没有编造。
+
+## 完整源码
+
+完整实现是 `projects/44-snake/`（<https://github.com/yujh129/rust-book-zh/tree/main/projects/44-snake>）里的 434 行单文件，零依赖。输入从 stdin 一次读完，所以每一步都可复现：
+
+```console
+$ cd projects/44-snake
+$ printf 'wwdd' | cargo run --offline -- 8 6 3
+8x6 的棋盘，食物在 (6, 1)
+得分 1，长度 4，状态 还在进行
+$ printf 'wwdd' | cargo run --offline -- 8 6 3 --frames  # 每步打印一帧
+$ cargo test --offline                                    # 9 个单元测试
+```
+
+| 文件 | 内容 |
+| --- | --- |
+| `src/main.rs` | `Point`/`Direction`/`Status`/`Game` 四个类型、`turn`/`step`/`place_food`/`render`、`describe`、`main` 与 9 个测试 |
+
+44.9 提醒过：正文 44.3、44.4、44.5 的三段演示代码各自带 `fn main`，只是方便分段阅读；项目里只有一个 `main`，其余片段按依赖顺序排成模块级函数。
 
 ## 44.10 动手练习
 

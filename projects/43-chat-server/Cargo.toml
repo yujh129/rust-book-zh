@@ -1,0 +1,15 @@
+[package]
+name = "chat-server"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "chat-server"
+path = "src/main.rs"
+
+[lib]
+name = "chat_server"
+path = "src/lib.rs"
+
+[dependencies]
+tokio = { version = "=1.54.1", features = ["full"] }

@@ -11,6 +11,9 @@ __pycache__/
 # 本地运行器的构建产物
 tools/playground/target/
 
+# 六个项目工程的构建产物
+projects/*/target/
+
 # 本地运行器每次运行都会覆盖这个入口文件，因此不入库（目录里保留了 src/.gitkeep）
 tools/playground/src/main.rs
 

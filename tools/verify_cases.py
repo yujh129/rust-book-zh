@@ -95,7 +95,8 @@ def main():
         print('no chapters matched')
         return 2
 
-    report, stats = [], {'match': 0, 'mismatch': 0, 'no_expected': 0, 'slow': 0}
+    report, stats = [], {'match': 0, 'mismatch': 0, 'no_expected': 0, 'slow': 0,
+                         'error': 0}
     for path in files:
         rel = os.path.relpath(path, os.path.join(ROOT, 'src')).replace(os.sep, '/')
         blocks = parse(path)
@@ -111,7 +112,15 @@ def main():
                     break
                 if nxt['info'].startswith('console'):
                     break
-            result, elapsed = post(args.base, block['code'], args.timeout)
+            try:
+                result, elapsed = post(args.base, block['code'], args.timeout)
+            except Exception as exc:  # 运行器没响应也不该中断整轮校验
+                stats['error'] += 1
+                report.append(('ERR', rel, block['line'], expected,
+                               'request failed: ' + str(exc)))
+                sys.stdout.write('!')
+                sys.stdout.flush()
+                continue
             got = first_error_line(result)
             if elapsed > 3:
                 stats['slow'] += 1
@@ -147,10 +156,10 @@ def main():
     except OSError as exc:
         print('could not write report: ' + str(exc))
     print('')
-    print('%d editable case blocks: %d match, %d mismatch, %d without documented error, %d slow'
+    print('%d editable case blocks: %d match, %d mismatch, %d request errors, %d without documented error, %d slow'
           % (sum(stats.values()), stats['match'], stats['mismatch'],
-             stats['no_expected'], stats['slow']))
-    return 0 if stats['mismatch'] == 0 else 1
+             stats['error'], stats['no_expected'], stats['slow']))
+    return 0 if stats['mismatch'] == 0 and stats['error'] == 0 else 1
 
 
 if __name__ == '__main__':

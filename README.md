@@ -4,7 +4,7 @@
 [![Pages 部署](https://github.com/yujh129/rust-book-zh/actions/workflows/pages.yml/badge.svg)](https://github.com/yujh129/rust-book-zh/actions/workflows/pages.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-一本写给中文读者的 Rust 系统教程：从第一行 `println!` 讲到 Tokio 异步、unsafe/FFI，最后带你做完七个完整项目。全书 **44 章 + 4 个附录**，约 **3.8 万行 / 106 万字符**，用 [mdBook](https://rust-lang.github.io/mdBook/) 构建。
+一本写给中文读者的 Rust 系统教程：从第一行 `println!` 讲到 Tokio 异步、unsafe/FFI，最后带你做完六个完整项目。全书 **44 章 + 4 个附录**，约 **3.8 万行 / 106 万字符**，用 [mdBook](https://rust-lang.github.io/mdBook/) 构建。
 
 书里的每个「典型错误案例」都是真实的 `rustc` 输出，而且可以在浏览器里直接改代码、点 **Run**，亲手对比错误写法与正确写法。
 
@@ -15,7 +15,7 @@
 - **讲「为什么」，不只是语法清单。** 所有权、借用检查、生命周期、trait 分派、Future 状态机、内存布局……每个机制都从编译器和内存模型的角度解释，而不是让你背规则。
 - **每章 5 个真实报错。** 错误代码（E0382、E0502、E0596……）+ `rustc` 完整输出（含 `-->` 位置、`^` 指示符、`help` / `note`）+ 原因 + 修复，训练你先学会读编译器。
 - **错误案例可以上手改。** 案例块默认就是可编辑的：先跑一次看报错，再照修复方案改一行、跑第二次，直接看到通过的结果。带 `#[test]` 的代码块按 `cargo test` 运行，能看到 `test ... ok` 和 `test result: FAILED`。
-- **从入门一直到能写生产代码。** 后半程覆盖 tracing、serde、clap、axum、CI 与发布，以及七个项目实战：minigrep、JSON 解析器、HTTP 服务器、mini-redis、多人聊天室、贪吃蛇。
+- **从入门一直到能写生产代码。** 后半程覆盖 tracing、serde、clap、axum、CI 与发布，以及六个项目实战：minigrep、JSON 解析器、HTTP 服务器、mini-redis、多人聊天室、贪吃蛇。
 - **四套精选配色。** 除 mdBook 自带的主题外，另有纸墨、樱花、Nord、Gruvbox；正文、链接与代码的对比度按 WCAG AA 测过。
 
 ## 目录
@@ -68,6 +68,7 @@ python tools/serve_book.py --no-serve   # 只启动运行器
 ├── LICENSE
 ├── theme/               # extra.css（排版/导航/配色）、head.hbs（运行器转发）、index.hbs、book.js
 ├── src/                 # SUMMARY.md、前言与环境搭建、part1~part7、appendix A~D
+├── projects/            # 第七部分六个项目的完整源码，可直接 cargo run / cargo test
 ├── tools/
 │   ├── serve_book.py         # 一条命令同时启动书与本地运行器
 │   ├── playground_server.py  # 本地 Rust 运行器：离线编译并运行书里的代码块
@@ -75,9 +76,32 @@ python tools/serve_book.py --no-serve   # 只启动运行器
 │   ├── verify_blocks.py      # 用 rustc 逐块类型检查普通 rust 示例
 │   ├── verify_cases.py       # 把可编辑案例块送进运行器，核对正文里的报错
 │   ├── check_book.py         # 章节结构、必备小节与交叉引用检查
+│   ├── check_projects.py      # 逐个构建并测试 projects/ 下的六个工程
 │   └── ...                   # 其余为写作期辅助脚本
 └── .github/workflows/   # Pages 自动发布 + 代码块校验
 ```
+
+## 六个可以直接跑的项目
+
+第七部分不是纸上谈兵：每一章对应的完整工程都在 `projects/` 下，clone 下来就能 `cargo run` / `cargo test` —— 前四个零依赖，聊天室与贪吃蛇只依赖 tokio（书里也是这么讲的）。
+
+| 目录 | 章节 | 是什么 | 跑起来 |
+| --- | --- | --- | --- |
+| [`projects/39-minigrep/`](projects/39-minigrep) | 39 | ripgrep 的迷你版：库 + 二进制 + 4 个集成测试 | `cd projects/39-minigrep && cargo run -- fast poem.txt` |
+| [`projects/40-json-parser/`](projects/40-json-parser) | 40 | 手写 JSON 解析器，零依赖，能往返、能美化输出 | `cd projects/40-json-parser && cargo run -- --pretty` |
+| [`projects/41-http-server/`](projects/41-http-server) | 41 | 纯标准库静态文件服务器，固定线程池 + 优雅退出 | `cd projects/41-http-server && cargo run` |
+| [`projects/42-mini-redis/`](projects/42-mini-redis) | 42 | RESP 协议的迷你 Redis，带 `--selftest` 自检 | `cd projects/42-mini-redis && cargo run -- --selftest` |
+| [`projects/43-chat-server/`](projects/43-chat-server) | 43 | tokio 多人聊天室：广播、昵称、慢客户端丢消息 | `cd projects/43-chat-server && cargo run -- 127.0.0.1:9000` |
+| [`projects/44-snake/`](projects/44-snake) | 44 | 终端贪吃蛇，方向序列从 stdin 读入，结果可复现 | `cd projects/44-snake && printf 'wwdd' | cargo run -- 8 6 3` |
+
+六个工程一共 41 个自动化测试，一条命令全跑（`--offline` 只在没有网络时用）：
+
+```bash
+python tools/check_projects.py
+python tools/check_projects.py --only 42    # 只跑一个
+```
+
+每章的「## 完整源码」小节列出了该工程每个文件负责什么，正文与源码如有出入，以 `projects/` 为准。
 
 ## 质量把关
 
@@ -86,6 +110,7 @@ python tools/serve_book.py --no-serve   # 只启动运行器
 | 章节结构、必备小节、交叉引用 | `python tools/check_book.py` | 50 个条目，0 告警 |
 | 普通 rust 代码块能否编译 | `python tools/verify_blocks.py src` | 436 块，0 失败 |
 | 可编辑案例的报错是否与正文一致 | `python tools/verify_cases.py` | 284 块：145 块逐字对上，139 块是可运行的修复版或测试，0 不一致 |
+| 六个项目工程能否构建并通过测试 | `python tools/check_projects.py --offline` | 6 个工程，41 个测试全过 |
 | 整书构建 | `mdbook build` | 零警告 |
 
 ## 这本书是怎么写出来的：DSH
@@ -108,6 +133,7 @@ python tools/serve_book.py --no-serve   # 只启动运行器
 ```bash
 python tools/verify_blocks.py src --only <章名>
 python tools/check_book.py
+python tools/check_projects.py --offline   # 改了 projects/ 里的代码才需要
 ```
 
 ## 许可证

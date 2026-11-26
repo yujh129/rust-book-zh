@@ -2,15 +2,15 @@
 
 > **本章目标**
 >
-> - 读懂 RESP（REdis Serialization Protocol）的四类回复与两类请求，明白为什么数据库协议要用长度前缀而不是换行分隔
+> - 读懂 RESP（REdis Serialization Protocol）的五种回复形态与两类请求，明白为什么数据库协议要用长度前缀而不是换行分隔
 > - 写一个能处理 TCP 粘包与半包的状态无关解析器：`parse_command(&[u8]) -> Result<Option<(Vec<String>, usize)>, String>`
 > - 用 `HashMap<String, Entry>` 加每次读写时的惰性过期，实现 SET/GET/DEL/EXISTS/INCR/KEYS/EXPIRE/TTL
 > - 把内存结构包进 `Arc<Mutex<Store>>`，用「每连接一个线程」的模型同时服务多个客户端
-> - 用同一个 crate 同时产出库与二进制，让 9 个单元测试与 3 个端到端测试都能 `cargo test` 一键跑通
+> - 用同一个 crate 同时产出库与二进制，让 9 个单元测试与 4 个端到端测试都能 `cargo test` 一键跑通
 
 前三个项目（minigrep、JSON 解析器、HTTP 服务器）处理的都是「一问一答就结束」的连接。这一章要做的东西不一样：客户端连着不断开，一条连接上可能连续发出几百条命令，服务端要一直记住状态。这就是数据库的样子。
 
-我们照着 Redis 的线协议做一个精简版：`mini-redis`。它不支持主从、不支持集群、不支持持久化，但协议解析、过期语义、并发共享这几块是真的，代码大约 300 行，全部只用标准库。
+我们照着 Redis 的线协议做一个精简版：`mini-redis`。它不支持主从、不支持集群、不支持持久化，但协议解析、过期语义、并发共享这几块是真的，代码大约 600 行（不含测试），全部只用标准库。
 
 ## 42.1 需求与验收标准
 
@@ -32,7 +32,7 @@
 
 验收标准写成三条，后面每写完一层就对照一次：
 
-1. `cargo test` 全绿：9 个单元测试（协议解析 4 个、存储语义 4 个、回复编码 1 个）加 3 个端到端测试。
+1. `cargo test` 全绿：9 个单元测试（协议解析 4 个、存储语义 4 个、回复编码 1 个）加 4 个端到端测试，多出来的那个专门盯第 3 条验收标准。
 2. 真实客户端能连上来发命令，收到逐字节符合 RESP 的回复。
 3. 两个客户端同时连上，一个写一个读，读到的是同一份数据——这就逼出了 `Arc<Mutex<..>>`。
 
@@ -199,7 +199,10 @@ pub fn parse_command(buf: &[u8]) -> Result<Option<(Vec<String>, usize)>, String>
             .parse()
             .map_err(|_| String::from("bulk 长度非法"))?;
         let body_start = hdr_end + 2;
-        let body_end = body_start + len;
+        // len 也是客户端给的，直接相加可能整数溢出。
+        let Some(body_end) = body_start.checked_add(len) else {
+            return Err(String::from("bulk 长度非法"));
+        };
         if buf.len() < body_end + 2 {
             return Ok(None);
         }
@@ -215,6 +218,7 @@ pub fn parse_command(buf: &[u8]) -> Result<Option<(Vec<String>, usize)>, String>
 几处细节：
 
 - 判断用 `buf.len() < body_end + 2` 而不是 `< body_end`：正文后面还有两个字节的 CRLF，少一个字节都算没读完。写成后者会在下一步 `pos = body_end + 2` 时越界。
+- `body_start + len` 用 `checked_add` 而不是直接相加：`len` 同样是客户端说了算，发一个 `$18446744073709551615` 的头就能让加法在 debug 构建下整数溢出、直接 panic。溢出当协议错误处理，连复用连接的机会都不给。
 - 所有 `Err` 都是**协议错误**，不是**命令错误**。`SET` 少了一个参数是命令错误，应该回一个 RESP 错误但仍保持连接；而 `*3` 后面跟 `XX` 这种是协议错误，说明字节流已经没法继续切了，只能断开。
 - 用 `String` 存参数而不是 `&[u8]`：省掉生命周期标注，代价是不能存二进制值。真实 Redis 的键值都是字节串，如果要做二进制安全，把 `String` 换成 `Vec<u8>`，把 utf8 校验删掉即可。
 
@@ -317,18 +321,22 @@ pub fn execute(store: &mut Store, args: &[String]) -> Reply {
     match cmd.as_str() {
         "PING" => Reply::Simple(String::from("PONG")),
         "SET" if rest.len() >= 2 => {
-            let ttl = if rest.len() >= 4 && rest[2].eq_ignore_ascii_case("EX") {
-                rest[3].parse::<u64>().ok().map(Duration::from_secs)
+            if rest.len() >= 4 && rest[2].eq_ignore_ascii_case("EX") {
+                match rest[3].parse::<u64>() {
+                    Ok(secs) => store.set(&rest[0], &rest[1], Some(Duration::from_secs(secs))),
+                    // EX 后面不是数字：这是命令错误，不能悄悄当成「不过期」。
+                    Err(_) => return Reply::Error(String::from("EX 的秒数非法")),
+                }
             } else {
-                None
-            };
-            store.set(&rest[0], &rest[1], ttl);
+                store.set(&rest[0], &rest[1], None);
+            }
             Reply::Simple(String::from("OK"))
         }
         "SET" => Reply::Error(String::from("SET 需要 key 和 value")),
         "GET" if rest.len() == 1 => Reply::Bulk(store.get(&rest[0])),
         "GET" => Reply::Error(String::from("GET 需要恰好一个 key")),
         "DEL" if rest.len() == 1 => Reply::Integer(store.del(&rest[0]) as i64),
+        "EXISTS" if rest.len() == 1 => Reply::Integer(store.exists(&rest[0]) as i64),
         "INCR" if rest.len() == 1 => match store.incr(&rest[0]) {
             Ok(n) => Reply::Integer(n),
             Err(e) => Reply::Error(e.to_string()),
@@ -378,7 +386,8 @@ pub fn handle_connection(mut stream: TcpStream, store: Arc<Mutex<Store>>) {
             match parse_command(&buf) {
                 Ok(Some((args, used))) => {
                     buf.drain(..used);
-                    let quit = args[0].eq_ignore_ascii_case("QUIT");
+                    // *0 是合法输入，会解析出空参数表；直接取 args[0] 会先 panic。
+                    let quit = args.first().is_some_and(|a| a.eq_ignore_ascii_case("QUIT"));
                     let reply = {
                         let mut guard = store.lock().unwrap();
                         execute(&mut guard, &args)
@@ -437,7 +446,25 @@ pub fn read_reply(stream: &mut TcpStream) -> std::io::Result<String> {
 }
 ```
 
-`read_line` 来自 `BufRead` trait，只 `use std::io::BufReader` 是不够的，必须同时 `use std::io::BufRead`——这个报错我在写这一章时真的踩了一次，报错原文见下面的错误案例。`try_clone()` 复制的是文件描述符（Windows 上是对应的句柄），两个 `TcpStream` 指向同一个连接，读写互不影响，所以把读的那一份包进 `BufReader` 不会丢数据。
+`read_line` 来自 `BufRead` trait，只 `use std::io::BufReader` 是不够的，必须同时 `use std::io::BufRead`——这个报错我在写这一章时真的踩了一次，报错原文见下面的错误案例。`try_clone()` 复制的是文件描述符（Windows 上是对应的句柄），两个 `TcpStream` 指向同一个连接，读写互不影响。
+
+但上面这个 `read_reply` 只适合测试里**读一次**：它每次调用都新建一个 `BufReader`，函数一返回缓冲区就被丢掉，而 `BufReader` 会一次从 socket 读一大块——如果它顺手把「下一条回复」的字节也读进了自己的缓冲区，那些字节就永久丢了。要连续读多条回复，客户端必须让同一个 `BufReader` 活到对话结束，并且把 bulk 的正文也读走：
+
+```rust,noplayground
+/// 长期存活的读取器：缓冲区不丢，bulk 正文也一起读掉。
+pub fn read_reply(reader: &mut BufReader<TcpStream>) -> std::io::Result<String> {
+    let mut line = String::new();
+    reader.read_line(&mut line)?;
+    let head = line.trim_end().to_string();
+    if let Some(len) = head.strip_prefix('$').and_then(|n| n.parse::<usize>().ok()) {
+        let mut body = vec![0u8; len + 2];
+        reader.read_exact(&mut body)?;
+    }
+    Ok(head)
+}
+```
+
+`--selftest` 用的就是这个版本：读一整个回复，但只把头部返回去打印，所以输出里 `$5` 后面看不到 `hello`。
 
 `cargo test` 的实际输出（`--offline` 因为本机没网，依赖只有标准库，不影响结果）：
 
@@ -455,12 +482,13 @@ test reply::tests::replies_have_correct_wire_format ... ok
 
 test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 
-running 3 tests
+running 4 tests
 test end_to_end_set_get ... ok
 test resp_array_over_tcp ... ok
+test two_clients_share_state ... ok
 test unknown_command_returns_error ... ok
 
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 ```
 
 二进制侧还要支持一个 `--selftest` 模式，自己起服务、自己连自己发几条命令，方便在没有 `redis-cli` 的机器上验证。实际运行输出：
@@ -475,9 +503,9 @@ mini-redis 已启动：127.0.0.1:6399
 发送 "KEYS" → 收到 "$13"
 ```
 
-注意 `GET greeting` 只打印了一行 `$5`——因为 `read_reply` 只读一行头部，`hello` 那行没被读走。这不是 bug，是我们故意让测试工具简单：断言时只关心头部类型与长度，`$5` 已经说明「值存在且长 5 字节」，而长度的正确性由单元测试 `replies_have_correct_wire_format` 逐字节保证。真实客户端会读满 `5 + 2` 个字节。
+`GET greeting` 只打印 `$5`，因为 `--selftest` 用的读取函数会把 `hello` 的正文一起读掉（否则下一次读到的就是正文而不是回复头），但只把头部返回、打印出来。断言时我们只关心头部类型与长度：`$5` 已经说明「值存在且长 5 字节」，而长度的正确性由单元测试 `replies_have_correct_wire_format` 逐字节保证。真实客户端会把 `5 + 2` 个字节的正文交给业务层。
 
-## 42.8 深入：这 300 行背后的取舍
+## 42.8 深入：这 600 行背后的取舍
 
 ### 每连接一线程能撑多少
 
@@ -806,6 +834,33 @@ fn main() {
 
 这段会打印 `1`。判断一个类型能不能跨线程，看两个 auto trait 就够：`Send`（能把所有权移到别的线程）和 `Sync`（能被多个线程同时 `&` 引用）。`Rc`/`RefCell`/裸指针都不是 `Send`；`Arc<T>` 是 `Send` 当且仅当 `T: Send + Sync`。第 21、22 章有完整的对照表。
 
+## 完整源码
+
+完整实现按层次拆在 `projects/42-mini-redis/`（<https://github.com/yujh129/rust-book-zh/tree/main/projects/42-mini-redis>），零依赖。没有 `redis-cli` 也能验证：
+
+```console
+$ cd projects/42-mini-redis
+$ cargo run --offline -- --selftest
+mini-redis 已启动：127.0.0.1:6379
+发送 "PING" → 收到 "+PONG"
+发送 "SET greeting hello" → 收到 "+OK"
+发送 "GET greeting" → 收到 "$5"
+发送 "INCR hits" → 收到 ":1"
+发送 "KEYS" → 收到 "$13"
+```
+
+不带 `--selftest` 就是普通服务器：`cargo run --offline -- 6380`，再用 `redis-cli -p 6380` 或 `nc 127.0.0.1 6380` 连上去。`cargo test --offline` 跑 9 个单元测试加 4 个端到端测试。
+
+| 文件 | 内容 |
+| --- | --- |
+| `src/parse_command.rs` | RESP 命令的纯函数解析器，处理半包与粘包，含 `*0`、`$` 长度溢出这些边界 |
+| `src/store.rs` | `Entry` 与 `Store`，惰性过期 |
+| `src/reply.rs` | 五种回复形态的编码（`+` `-` `:` `$` `*`） |
+| `src/lib.rs` | 命令分发（含 `SET … EX` 的校验）、连接循环、`serve` |
+| `src/main.rs` | 端口参数与 `--selftest` |
+| `tests/end_to_end.rs` | 4 个端到端测试，含 `two_clients_share_state` |
+| `smoke_test.py` | 30 项逐字节的协议冒烟测试，自己起服务、自己连 |
+
 ## 42.10 动手练习
 
 1. **加计数命令**：实现 `INCRBY key n` 与 `DECR key`，要求 `n` 不是整数、键值不是整数、加减溢出（用 `i64::checked_add`）三种情况都返回 RESP 错误而不是 panic。再补三个单元测试。
@@ -825,4 +880,4 @@ fn main() {
 - `Arc` 不是 `Copy`：循环里给每个线程发句柄必须 `Arc::clone(&store)`，并且要放在循环体内。
 - 每连接一线程的模型简单但扩展性差（8 MiB 虚拟栈/线程），上万连接要换事件循环；这正是 Tokio 存在的理由。
 - 任何来自外部的长度字段（`*N`、`$N`）都必须先校验上限再分配内存，否则就是一个远程 OOM 漏洞。
-- `cargo test` 的 9 个单元测试 + 3 个端到端测试覆盖了协议、存储、并发三条主线；写网络程序时，把「解析」和「IO」拆开是可测试性的关键。
+- `cargo test` 的 9 个单元测试 + 4 个端到端测试覆盖了协议、存储、并发三条主线；写网络程序时，把「解析」和「IO」拆开是可测试性的关键。

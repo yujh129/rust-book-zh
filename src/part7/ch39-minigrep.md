@@ -37,7 +37,7 @@ else
 fi
 ```
 
-如果所有情况都返回 0，「找没找到」就无法判断。grep 的约定是：0 = 找到，1 = 没找到，2 = 出错。我们照抄这套约定。
+如果所有情况都返回 0，「找没找到」就无法判断。grep 的约定是：0 = 找到，1 = 没找到，2 = 出错。我们沿用这套约定，再把「出错」拆成两类：**2 = 参数用法错误，3 = 文件读取失败**。脚本里 `if` 只看 0 与非 0，但需要区分「我没写对命令」和「文件不在了」时，3 这个码就有用。
 
 ## 39.2 项目骨架
 
@@ -301,9 +301,9 @@ pub fn bad(s: &str) -> &str {
 
 `lower` 在函数结束时被销毁，返回的 `&str` 就成了悬垂引用，编译器直接拒绝。
 
-### 一个小优化：避免整行分配
+### 一个小优化：查询串只小写一次
 
-`line.to_lowercase()` 为每一行分配一个 String。对大文件这是明显的浪费。可以改成按需比较：
+朴素写法是每次都把一行和查询串同时小写：每行都要分配一个 String。至少可以把查询串的小写提到循环外，只做一次：
 
 ```rust
 pub fn search_case_insensitive<'a>(query: &str, contents: &'a str) -> Vec<(usize, &'a str)> {
@@ -322,7 +322,7 @@ fn main() {
 }
 ```
 
-输出 `2`。查询串只小写一次，每行的小写仍是临时分配——要彻底消除得用 `eq_ignore_ascii_case` 或 `str::to_lowercase` 的迭代器版本，那属于微优化，第 39.7 节会讨论取舍。
+输出 `2`。这里的改进只在查询串：它只小写一次。每行的小写仍是临时分配——这一步要彻底消除，得用 `eq_ignore_ascii_case`（只处理 ASCII）或 `chars().flat_map(char::to_lowercase)` 逐字符比较，那属于微优化，39.7 节的性能表里会给出取舍。
 
 ## 39.6 测试：单元 + 集成
 
@@ -391,7 +391,7 @@ fn exits_with_2_on_bad_flag() {
 
 ### 实际运行效果
 
-准备一个 `poem.txt`：
+准备一个 `poem.txt`；为了让集成测试也能读到同一份数据，把它复制到 `tests/fixtures/poem.txt`（`tests/cli.rs` 里的路径就是按这个位置写的）：
 
 ```text
 Rust:
@@ -471,7 +471,7 @@ fn main() -> std::io::Result<()> {
 | 直接 `println!` 每行 | 每次调用都锁 stdout | 用 `BufWriter` 或 `stdout().lock()` |
 | 先 collect 全部行再遍历 | 整个文件进内存 | 用迭代器流式处理 |
 
-`println!` 的开销值得单独说：标准输出的 `println!` 每次都会获取一次全局锁。改成绩效更好、但要注意在所有分支都拿到结果：
+`println!` 的开销值得单独说：标准输出的 `println!` 每次都会获取一次全局锁。本章的 `run` 为了简短就是逐行 `println!`——搜索结果通常只有几十行，这个代价可以忽略；输出量大时才值得换成下面这种写法（注意要在所有分支都拿到结果）：
 
 ```rust,noplayground
 use std::io::{self, BufWriter, Write};
@@ -539,7 +539,7 @@ fn main() {
 
 ### 为什么 `Box<dyn Error>` 能装下所有错误
 
-`?` 在错误类型不匹配时会尝试 `From::from` 转换。标准库为 `Box<dyn Error>` 提供了一条 blanket impl：任何 `E: Error + Send + Sync + 'a` 都能自动转成 `Box<dyn Error + Send + Sync + 'a>`。所以 `io::Error` 能自动变成 `Box<dyn Error>`，`run` 里的 `?` 才能用。
+`?` 在错误类型不匹配时会尝试 `From::from` 转换。标准库写了两条 blanket impl：`E: Error + 'a` 可以转成 `Box<dyn Error + 'a>`，`E: Error + Send + Sync + 'a` 可以转成 `Box<dyn Error + Send + Sync + 'a>`。也就是说 `Box<dyn Error>` 这一侧**不要求** `Send + Sync`；只有你显式写了 `+ Send + Sync` 的类型才会去要求它们。`io::Error` 两条都满足，所以 `run` 里的 `?` 用哪一种签名都能编译。
 
 注意 `Box<dyn Error>` 默认不是 `Send`：如果这个 Future 要跨线程（第 25 章的 `tokio::spawn`），就得写 `Box<dyn Error + Send + Sync>`。
 
@@ -778,6 +778,26 @@ fn main() {
     println!("{:?}", config);
 }
 ```
+
+## 完整源码
+
+正文里的每一段代码都在仓库的 `projects/39-minigrep/` 里落成了能直接跑的文件（<https://github.com/yujh129/rust-book-zh/tree/main/projects/39-minigrep>）。不想跟着正文一行行敲，可以直接读、直接跑：
+
+```console
+$ cd projects/39-minigrep
+$ cargo run --offline -- fast poem.txt
+safe, fast, productive.
+RUST is also fast.
+```
+
+| 文件 | 内容 |
+| --- | --- |
+| `src/lib.rs` | `Config`、`ConfigError`、`run`、`search`、`search_case_insensitive`，对应 39.3–39.5，末尾带 3 个单元测试 |
+| `src/main.rs` | 29 行外壳：只收参数、调库、把结果翻译成退出码（2 参数错误、1 无匹配、3 读取失败） |
+| `tests/cli.rs` | 4 个集成测试，真的启动二进制、断言 stdout 与退出码 |
+| `poem.txt`、`tests/fixtures/poem.txt` | 手测和集成测试共用的小文本 |
+
+`cargo test --offline` 会跑 3 个单元测试加 4 个集成测试。正文与源码之间以 `projects/39-minigrep/` 为准：如果某段正文和项目里的实现对不上，就是正文漏了一次同步，欢迎开 issue 指出来。
 
 ## 39.10 动手练习
 

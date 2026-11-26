@@ -10,7 +10,7 @@
 
 ## 43.1 需求与验收标准
 
-先划边界。本章要交付的是一个能跑、能测、能把设计讲清楚的小服务器，正文代码约 300 行，分成两个文件：lib.rs 装服务器逻辑，main.rs 只做进程入口。这样测试可以直接调 lib 里的函数，不必启动一个真进程。
+先划边界。本章要交付的是一个能跑、能测、能把设计讲清楚的小服务器，正文代码 450 行上下（lib.rs 约 430 行，main.rs 30 行），分成两个文件：lib.rs 装服务器逻辑，main.rs 只做进程入口。这样测试可以直接调 lib 里的函数，不必启动一个真进程。
 
 ### 功能需求
 
@@ -159,7 +159,18 @@ hub 模型把这三件事一起收进一个 task：发送是定向的，背压�
 
 ## 43.4 实现 hub：Cmd、Client 与慢客户端策略
 
-hub 只认四种命令：
+先定三个常量，后面所有循环的容量都来自它们：
+
+```rust,noplayground
+/// 一个客户端最多能欠服务器多少条消息。
+pub const OUT_CAPACITY: usize = 32;
+/// hub 的命令队列容量。
+pub const CMD_CAPACITY: usize = 64;
+/// 昵称最长 32 个字符。
+pub const MAX_NAME_LEN: usize = 32;
+```
+
+hub 只认五种命令：
 
 ```rust,noplayground
 pub enum Cmd {
@@ -167,6 +178,7 @@ pub enum Cmd {
     Leave { id: u64 },
     Say { id: u64, text: String },
     Who { id: u64 },
+    Notice { id: u64, text: String },
 }
 
 pub struct Client {
@@ -218,6 +230,9 @@ impl Hub {
                 let roster = self.roster();
                 self.send_to(id, format!("*** 在线：{}", roster));
             }
+            Cmd::Notice { id, text } => {
+                self.send_to(id, text);
+            }
         }
     }
 
@@ -256,6 +271,39 @@ impl Hub {
         }
         self.dropped += failed;
     }
+
+    pub fn len(&self) -> usize {
+        self.clients.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.clients.is_empty()
+    }
+}
+```
+
+另外两个辅助函数：昵称清洗在连接建立时调用，时间戳在拼广播行时调用。
+
+```rust,noplayground
+use std::time::{SystemTime, UNIX_EPOCH};
+
+/// R2：去掉空白与斜杠，最长 32 个字符。
+pub fn sanitize_name(raw: &str) -> String {
+    raw.trim()
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '/')
+        .take(MAX_NAME_LEN)
+        .collect()
+}
+
+/// R4：取 UTC 的 [HH:MM:SS]。依赖清单里没有 chrono，想要当地时间得另加时区库。
+pub fn timestamp() -> String {
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let s = secs % 86_400;
+    format!("{:02}:{:02}:{:02}", s / 3600, (s % 3600) / 60, s % 60)
 }
 ```
 
@@ -396,7 +444,7 @@ loop {
     let cmd = if text.eq_ignore_ascii_case("/who") {
         Cmd::Who { id }
     } else if text.starts_with('/') {
-        Cmd::Say { id, text: format!("未知命令：{}", text) }
+        Cmd::Notice { id, text: format!("未知命令：{}", text) }
     } else {
         Cmd::Say { id, text: text.to_string() }
     };
@@ -407,6 +455,16 @@ loop {
 ```
 
 这里藏着一个 tokio 里最常见的正确性陷阱：read_line 不是可取消安全的。select! 里另一个分支先完成时，read_line 的 future 会被丢掉；已经读进 BufReader 缓冲区的那部分数据还在，但已经追加进 line 的那部分会跟着 line 一起丢失。上面的写法之所以安全，是因为 line 每轮新建，而且取消只在「要退出了」时发生。如果同一个 select 里还有别的会先完成的分支，就必须换成手写状态机，或者把半行数据留在自己的缓冲区里。
+
+把 43.2 的骨架、43.5 的写 task 和这段读循环按顺序接起来，就是完整的 handle_conn。还差最后三步：跳出循环后给 hub 发 Leave，再等写 task 收尾（hub 退出时会把 Client 连同出站队列的发送端一起丢掉，写 task 的 recv 这才返回 None）。
+
+```rust,noplayground
+// 三条退出路径（/quit、EOF、关闭信号）共用同一个出口。
+let _ = cmd_tx.send(Cmd::Leave { id }).await;
+let _ = write_task.await;
+```
+
+注意上面「未知命令」走的是 Cmd::Notice 而不是 Cmd::Say：这类提示只该回给发送者，广播给整个房间会让所有人都看到别人敲错的命令。hub 的 Notice 分支只调 send_to，不碰 broadcast。
 
 最后是进程入口。为什么把 serve 包进 spawn 再 select：既要等 Ctrl-C，又要等服务器自己结束（比如端口被占用导致 bind 失败），直接 await serve 就没办法同时等信号。
 
@@ -437,6 +495,15 @@ async fn main() -> std::io::Result<()> {
 ```
 
 注意 res = &mut server 那一路借的是 JoinHandle 而不是消费它，所以信号分支结束后还能再 await 一次，把服务器真正跑完再打印「已退出」。
+
+serve 只是「bind 再交给 run」这一层薄包装。单独拆出来是为了让测试能绕过固定端口：43.8 的端到端测试直接调 run，端口交给内核挑。
+
+```rust,noplayground
+pub async fn serve(addr: &str, shutdown: watch::Receiver<bool>) -> std::io::Result<()> {
+    let listener = TcpListener::bind(addr).await?;
+    run(listener, shutdown).await
+}
+```
 
 ## 43.7 手测：两个客户端对话
 
@@ -531,12 +598,13 @@ fn join_announces_to_others_and_who_lists_everyone() {
 }
 ```
 
-四个 hub 测试各管一件事：
+五个 hub 测试各管一件事：
 
 1. say_is_broadcast_with_name_and_time：断言消息以左方括号开头、以「ana: hi」结尾，且 dropped 为 0，把 R4 的格式钉死。
 2. join_announces_to_others_and_who_lists_everyone：就是上面这个，同时覆盖欢迎语只发给新人、进入通知发给老人、/who 返回排序名单。
 3. leave_removes_client_and_announces：离开后表里少一个，剩下的人收到通知，离开者自己的队列没有新消息。
-4. slow_client_drops_messages_and_counts_them：把队列容量设成 1，欢迎语先占满它，随后两条广播都发不出去，dropped 恰好是 2，队列里仍然只有一条。
+4. names_are_sanitized：昵称「  an/a  」清洗成「ana」，超过 32 个字符被截断，全是空白或斜杠的昵称得到空串、连接被直接拒绝。
+5. slow_client_drops_messages_and_counts_them：把队列容量设成 1，欢迎语先占满它，随后两条广播都发不出去，dropped 恰好是 2，队列里仍然只有一条。
 
 端到端测试则真的起一个服务器，用 local_addr 拿内核分配的端口：
 
@@ -1036,6 +1104,34 @@ fn add_bot(clients: &mut HashMap<u64, Client>) {
 
 collect 这一步就把借用结束了，后面的循环拿的是自有数据。这个模式在 hub 里也会用到：任何「根据表里的内容决定怎么改表」的操作，都先收集，再修改。
 
+## 完整源码
+
+完整项目在 `projects/43-chat-server/`（<https://github.com/yujh129/rust-book-zh/tree/main/projects/43-chat-server>）：`lib.rs` 装全部服务器逻辑（含 5 个 hub 单测和 1 个 `#[tokio::test]` 端到端测试），`main.rs` 只有 31 行的进程入口。
+
+```console
+$ cd projects/43-chat-server
+$ cargo run --offline -- 127.0.0.1:9000
+聊天服务器监听 127.0.0.1:9000
+# 另开两个终端，各自 nc 127.0.0.1 9000 并输入昵称
+$ cargo test --offline
+running 6 tests
+test tests::join_announces_to_others_and_who_lists_everyone ... ok
+test tests::leave_removes_client_and_announces ... ok
+test tests::names_are_sanitized ... ok
+test tests::say_is_broadcast_with_name_and_time ... ok
+test tests::slow_client_drops_messages_and_counts_them ... ok
+test tests::two_clients_chat_end_to_end ... ok
+test result: ok. 6 passed; 0 failed
+```
+
+| 文件 | 内容 |
+| --- | --- |
+| `src/lib.rs` | 常量（`OUT_CAPACITY`/`CMD_CAPACITY`/`MAX_NAME_LEN`）、`Cmd`/`Client`/`Hub`、`sanitize_name`、`timestamp`、`hub_loop`、`handle_conn`、`run`、`serve` |
+| `src/main.rs` | 参数、`watch` 关闭信号、`spawn(serve)` 加 `select!` 等 Ctrl-C |
+| `Cargo.toml` | 唯一依赖是 tokio（`features = ["full"]`） |
+
+43.2 给的是 `handle_conn` 的骨架，43.5 给写 task，43.6 给读循环——项目里能看到它们拼成的完整函数，以及退出时那句 `Leave` 与 `write_task.await`。
+
 ## 43.11 动手练习
 
 ### 练习 1：加一个 /nick 改名命令
@@ -1064,7 +1160,7 @@ collect 这一步就把借用结束了，后面的循环拿的是自有数据。
 
 ### 练习 5：出站类型换成 `Arc<str>`
 
-把 Cmd、Client、写 task 里的 String 全换成 `Arc<str>`，让每条广播只 clone 一次句柄而不是整条消息。改动会波及 Cmd 的定义、Hub 的四个分支、handle_conn 里的类型，以及测试里的断言（比较时用 &*line 或 line.as_ref()）。
+把 Cmd、Client、写 task 里的 String 全换成 `Arc<str>`，让每条广播只 clone 一次句柄而不是整条消息。改动会波及 Cmd 的定义、Hub 的五个分支、handle_conn 里的类型，以及测试里的断言（比较时用 &*line 或 line.as_ref()）。
 
 验收：cargo test 全过；在 5000 条消息、10 个客户端的压测里，用全局分配计数器对比改造前后的分配次数，解释差在哪里。
 
