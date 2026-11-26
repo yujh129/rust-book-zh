@@ -3,6 +3,24 @@
 本项目的所有重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.0.2] - 2026-11-26
+
+给「错误案例」补上可以直接运行的修复版代码：读完原因就能动手跑一遍确认，不用自己拼代码。
+
+### 新增
+
+- **每条案例的答案都给出修复后的完整代码**：34 条原先只写文字说明的案例补齐修复版代码，其中 30 条是可直接运行的完整程序（rust,editable），4 条是配置级修复（Cargo.toml / CI / feature，附 toml、bash 片段）。
+- 新增 `tools/add_fix_block.py`：按 `{file, case, code}` 把修复代码批量插到对应案例答案面板的末尾，幂等、拒绝重复插入。
+
+### 交互
+
+- **可编辑案例块从 313 个增加到 342 个**：每条案例现在是「错误版 + 修复版」两段，先在错误版点 Run 看真实报错，再展开答案、照修复版改一行跑第二次。
+
+### 校验
+
+- `tools/check_book.py` 增加规则：**每条案例必须至少有两个 rust 块或一个 toml/bash/console 配置块**，缺了直接报错，防止以后再漏。
+- 本版实测：`mdbook build` 零警告；`check_book.py` 50 章 0 问题；`verify_blocks.py src` 436 块 0 失败；`verify_cases.py --local` 342 块：174 逐字对上、158 正常运行、10 预期运行期失败、0 不一致。
+
 ## [1.0.1] - 2026-11-26
 
 一次以正确性为目标的修补版本：不新增章节，把六个项目的源码补进仓库，
@@ -18,7 +36,6 @@
 - 新增 [`CHANGELOG.md`](CHANGELOG.md) 与 `CONTRIBUTING` 说明之外的发布流程记录。
 - **案例答案默认收起**：每章 5 个「典型错误案例」的原因与修复包进 `<details class="case-answer">` 面板，
   先自己判断错在哪，再点「查看答案」展开对照；打印或导出 PDF 时自动展开。全库 220 个案例面板。
-- **每条答案补上修复后的完整代码**：34 条原先只给文字说明的案例补齐修复版代码，其中 30 条是可直接运行的完整程序，4 条是配置级修复（Cargo.toml / CI / feature，附 `toml`、`bash` 片段）。
 
 ### 修正
 
@@ -36,7 +53,7 @@
 
 ### 交互
 
-- **错误案例块全面可编辑**：343 个 `rust,editable` 块（含新增的 30 条修复版代码；1.0.0 时只有 284 个），
+- **错误案例块全面可编辑**：313 个 `rust,editable` 块（1.0.0 时只有 284 个），
   先跑一遍看真实报错，再照「修复」改一行跑第二次对比。
 - **本地运行器改为统一走离线 Cargo 工程**（`tools/playground/`）：带 `#[test]` 的代码按 `cargo test` 运行，
   能看到 `test ... ok` 与 `test result: FAILED`。
@@ -51,7 +68,7 @@
 | --- | --- | --- |
 | 章节结构、必备小节、链接、每章五案例 | `python tools/check_book.py` | 50 页，0 处问题 |
 | 正文普通代码块逐块编译 | `python tools/verify_blocks.py src` | 436 块，0 失败 |
-| 错误案例报错与正文逐字比对 | `python tools/verify_cases.py` | 342 块：174 逐字对上、158 正常运行、10 预期运行期失败、0 不一致 |
+| 错误案例报错与正文逐字比对 | `python tools/verify_cases.py` | 313 块：174 逐字对上、129 正常运行、10 预期运行期失败、0 不一致 |
 | 案例答案面板完整 | `python tools/check_book.py`（每条案例必须含 `<details class="case-answer">`） | 220 个面板，0 缺失 |
 | 六个项目工程构建并测试 | `python tools/check_projects.py --offline` | 6 个工程，42 个测试全过 |
 | 整书构建 | `mdbook build` | 零警告 |
@@ -90,5 +107,6 @@
 - Rust 2021 edition，核验使用 rustc / cargo 1.100.0；[mdBook](https://github.com/rust-lang/mdBook) 0.5.4。
 - 内容资产：`STYLE.md`（写作与代码块规范）、`CHAPTER-PLAN.md`（章节规划）、`WRITING-RULES.md`（协作规则）。
 
+[1.0.2]: https://github.com/yujh129/rust-book-zh/releases/tag/v1.0.2
 [1.0.1]: https://github.com/yujh129/rust-book-zh/releases/tag/v1.0.1
 [1.0.0]: https://github.com/yujh129/rust-book-zh/releases/tag/v1.0.0
