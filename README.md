@@ -1,8 +1,14 @@
 # Rust 学习指南：从入门到进阶
 
+[![代码块校验](https://github.com/yujh129/rust-book-zh/actions/workflows/check.yml/badge.svg)](https://github.com/yujh129/rust-book-zh/actions/workflows/check.yml)
+[![Pages 部署](https://github.com/yujh129/rust-book-zh/actions/workflows/pages.yml/badge.svg)](https://github.com/yujh129/rust-book-zh/actions/workflows/pages.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 一本写给中文读者的 Rust 系统教程：从第一行 `println!` 讲到 Tokio 异步、unsafe/FFI，最后带你做完七个完整项目。全书 **44 章 + 4 个附录**，约 **3.8 万行 / 106 万字符**，用 [mdBook](https://rust-lang.github.io/mdBook/) 构建。
 
 书里的每个「典型错误案例」都是真实的 `rustc` 输出，而且可以在浏览器里直接改代码、点 **Run**，亲手对比错误写法与正确写法。
+
+📖 **在线阅读：<https://yujh129.github.io/rust-book-zh/>** —— 由 GitHub Actions 从 `main` 分支自动构建发布；也可以按下面的步骤在本地构建。
 
 ## 这本书有什么
 
@@ -32,7 +38,7 @@
 
 ```bash
 cargo install mdbook --version 0.5.4 --locked
-git clone <仓库地址>
+git clone https://github.com/yujh129/rust-book-zh.git
 cd rust-book-zh
 mdbook serve --open     # http://localhost:3000，改 md 自动刷新
 ```
@@ -97,7 +103,7 @@ python tools/serve_book.py --no-serve   # 只启动运行器
 
 ## 贡献
 
-欢迎勘误、补充与讨论。改章节前请先读 [STYLE.md](STYLE.md)，改完至少跑一遍：
+欢迎勘误、补充与讨论：到 [Issues](https://github.com/yujh129/rust-book-zh/issues) 提问或报错，也可以直接提交 PR。改章节前请先读 [STYLE.md](STYLE.md)，改完至少跑一遍：
 
 ```bash
 python tools/verify_blocks.py src --only <章名>

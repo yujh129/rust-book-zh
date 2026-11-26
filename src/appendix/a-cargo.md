@@ -418,7 +418,7 @@ cargo test --offline
 error: failed to select a version for the requirement `serde = "^99"`
 candidate versions found which didn't match: 1.0.229
 location searched: `rsproxy-sparse` index (which is replacing registry `crates-io`)
-required by package `p4 v0.1.0 (D:\code\dshwork\rust-book\.scratch\cprobe\p4)`
+required by package `p4 v0.1.0 (C:\work\cprobe\p4)`
 note: perhaps a crate was updated and forgotten to be re-vendored?
 note: offline mode (via `--offline`) can sometimes cause surprising resolution failures
 help: if this error is too confusing you may wish to retry without `--offline`
@@ -482,7 +482,7 @@ warning: `p2` (manifest) generated 1 warning
 ```text
 error: no matching package named `this-crate-does-not-exist-xyz` found
 location searched: `rsproxy-sparse` index (which is replacing registry `crates-io`)
-required by package `p3 v0.1.0 (D:\code\dshwork\rust-book\.scratch\cprobe\p3)`
+required by package `p3 v0.1.0 (C:\work\cprobe\p3)`
 ```
 
 **原因**：包名拼错，或者包不在当前配置的源里。
@@ -503,7 +503,7 @@ candidate versions found which didn't match: 1.0.229
 ### A.11.5 锁文件与清单不一致
 
 ```text
-error: cannot update the lock file D:\code\dshwork\rust-book\.scratch\cprobe\p6\Cargo.lock because --locked was passed to prevent this
+error: cannot update the lock file C:\work\cprobe\p6\Cargo.lock because --locked was passed to prevent this
 help: to generate the lock file without accessing the network, remove the `--locked` flag and use `--offline` instead.
 ```
 
@@ -514,7 +514,7 @@ help: to generate the lock file without accessing the network, remove the `--loc
 ### A.11.6 库与二进制同名导致产物冲突
 
 ```text
-warning: output filename collision at D:\code\dshwork\rust-book\.scratch\cprobe\p5\target\debug\p5.pdb
+warning: output filename collision at C:\work\cprobe\p5\target\debug\p5.pdb
   = note: the bin target `p5` in package `p5 v0.1.0` has the same output filename as the lib target `p5` in package `p5 v0.1.0`
   = note: this may become a hard error in the future; see <https://github.com/rust-lang/cargo/issues/6313>
 ```

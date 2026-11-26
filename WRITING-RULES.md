@@ -78,7 +78,7 @@ cd .scratch/chNN && rustc --edition 2021 --crate-type bin -o /dev/null e1.rs 2>&
 
 ## 7. 自检（必须做）
 
-在 `D:\code\dshwork\rust-book` 目录下：
+在仓库根目录（本文件所在目录）下：
 
 ```bash
 python tools/verify_blocks.py src --only chNN 2>&1 | tail -6

@@ -10,6 +10,8 @@ Rust 官方文档《The Rust Programming Language》（俗称 The Book）质量�
 
 这本书按"先建立心智模型，再补语法细节，最后落到工程项目"的顺序组织，尽量用中文把每个设计决策背后的原因讲清楚。每一章都不止讲语法，还会给出编译器与运行时的实际行为、性能代价、边界情况，以及几个真实会踩的报错案例。它不替代官方文档，而是给你一条能走通的路：读完一章，你能动手写出对应的代码，并且知道编译器为什么接受或拒绝它。
 
+本书开源于 [yujh129/rust-book-zh](https://github.com/yujh129/rust-book-zh)，在线阅读版是 [yujh129.github.io/rust-book-zh](https://yujh129.github.io/rust-book-zh/)。发现错字、跑不通的代码，或者想补充内容，欢迎到仓库的 [Issues](https://github.com/yujh129/rust-book-zh/issues) 提出。
+
 ## 本书的结构
 
 | 部分 | 内容 | 读完之后 |

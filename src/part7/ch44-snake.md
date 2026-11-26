@@ -574,7 +574,7 @@ mod tests {
 
 ```console
 $ cargo test --offline
-   Compiling snake v0.1.0 (D:\code\dshwork\rust-book\.scratch\ch44\snake)
+   Compiling snake v0.1.0 (C:\work\ch44\snake)
     Finished `test` profile [unoptimized + debuginfo] target(s) in 1.09s
      Running unittests src\main.rs (target\debug\build\snake/723b06d8f259c687\out\snake-723b06d8f259c687.exe)
 
