@@ -141,6 +141,7 @@ python tools/check_projects.py --offline   # 改了 projects/ 里的代码才需
 
 ## 更新日志
 
+当前最新版本是 **v1.0.1**（补齐六个项目源码，修正正文与源码里的问题，可编辑案例扩展到 313 个）。
 每个版本做了什么、修掉了哪些问题，都记在 [CHANGELOG.md](CHANGELOG.md) 里。
 
 ## 许可证
